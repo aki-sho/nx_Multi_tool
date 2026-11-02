@@ -1,0 +1,175 @@
+/* タイマーツール専用CSS
+ * 目的:
+ * - 管理画面の中で見やすく、操作しやすいレイアウト
+ * - JS側ロジックとは分離して、見た目はここで調整できるようにする
+ */
+
+.nxmt-timer .nxmt-card {
+  background: #fff;
+  border: 1px solid #dcdcde;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.nxmt-timer .nxmt-note {
+  background: #f6f7f7;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.nxmt-timer .nxmt-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.nxmt-timer .nxmt-tabs {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.nxmt-timer .nxmt-tab {
+  border: 1px solid #dcdcde;
+  background: #f6f7f7;
+  padding: 6px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.nxmt-timer .nxmt-tab.is-active {
+  background: #fff;
+  border-color: #2271b1;
+}
+
+.nxmt-timer .nxmt-settings {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.nxmt-timer .nxmt-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nxmt-timer .nxmt-volume {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nxmt-timer .nxmt-panel {
+  display: none;
+  margin-top: 10px;
+}
+.nxmt-timer .nxmt-panel.is-active {
+  display: block;
+}
+
+.nxmt-timer .nxmt-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 960px) {
+  .nxmt-timer .nxmt-grid { grid-template-columns: 1fr; }
+}
+
+.nxmt-timer .nxmt-label {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.nxmt-timer .nxmt-time-inputs,
+.nxmt-timer .nxmt-alarm-inputs {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.nxmt-timer .nxmt-time-inputs input[type="number"] {
+  width: 90px;
+}
+
+.nxmt-timer .nxmt-presets {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.nxmt-timer .nxmt-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.nxmt-timer .nxmt-mini-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.nxmt-timer .nxmt-display {
+  border: 1px solid #dcdcde;
+  border-radius: 12px;
+  padding: 16px;
+  background: #fcfcfd;
+}
+
+.nxmt-timer .nxmt-display-title {
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.nxmt-timer .nxmt-display-time {
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  line-height: 1.1;
+  margin-bottom: 8px;
+}
+
+.nxmt-timer .nxmt-sub {
+  color: #646970;
+  margin-bottom: 10px;
+}
+
+.nxmt-timer .nxmt-progress {
+  width: 100%;
+  height: 10px;
+  background: #e9eaec;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.nxmt-timer .nxmt-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: #2271b1;
+  transition: width 0.2s linear;
+}
+
+.nxmt-timer .nxmt-laps {
+  margin-top: 10px;
+}
+
+.nxmt-timer .nxmt-laps ol {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.nxmt-timer .nxmt-laps li {
+  padding: 2px 0;
+}
