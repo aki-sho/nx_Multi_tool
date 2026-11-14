@@ -34,6 +34,9 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
     const tools=['site_links','qr','calc','bcrypt','password','timer','link_inspector','access_log','security_check','post_data','site_urls','search_replace','comment_manager'];
     for(const tool of tools){await go('/admin/extensions/nx_Multi_tool/dashboard?tool='+tool);check(await evaluate('!!document.querySelector("[data-nxmt]")&&!document.querySelector(".nxmt-notice.is-error")'),'render '+tool);}
     await go('/admin/extensions/nx_Multi_tool/dashboard?tool=security_check');
+    check(await evaluate(`Array.from(document.querySelectorAll('.nxmt-security-sources input')).every(box =>
+      box.getBoundingClientRect().width <= 24 && box.nextElementSibling.getBoundingClientRect().left - box.getBoundingClientRect().right <= 12)
+      && getComputedStyle(document.querySelector('[data-security-filter]').parentElement).whiteSpace === 'nowrap'`), 'security source boxes sit beside their labels');
     check(await evaluate(`document.querySelectorAll('[data-security-group]').length === 20
       && document.querySelector('[data-security-group="1"]').open
       && document.querySelector('[data-security-group="1"] .nxmt-security-check-head').textContent.includes('確認先（CMS・サーバー）')

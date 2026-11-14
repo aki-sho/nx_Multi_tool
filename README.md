@@ -4,13 +4,13 @@ NexaPressの管理画面に、サイト運営・コンテンツ管理・日常�
 
 - 拡張ID／フォルダ名：`nx_Multi_tool`
 - 表示名：**NX Multi Tool**
-- バージョン：1.0.4
+- バージョン：1.0.5
 - 対応CMS：NexaPress 2.4.0以上
 - PHP：8.0以上。PDO MySQL、DOM、mbstring、cURL。ZIP導入・ビルドにはZipArchiveが必要です。
 
 ## インストール
 
-1. `php build.php` で `dist/nx_Multi_tool-1.0.4.zip` を作成します。
+1. `php build.php` で `dist/nx_Multi_tool-1.0.5.zip` を作成します。
 2. NexaPress管理画面の「拡張機能」からZIPをアップロードし、有効化します。
 3. 拡張機能メニューの「Multi Tool」を開きます。
 4. 使う機能を選択し、設定を保存します。初期状態では13ツールが有効です。

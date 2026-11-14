@@ -41,6 +41,11 @@
     cursor: pointer;
 }
 .nxmt-security-sources label:has(input:checked) { background: #eaf5f0; }
+.nxmt .nxmt-security-sources label input[type="checkbox"] {
+    width: auto;
+    flex: 0 0 auto;
+    margin: 4px 3px 0 0;
+}
 .nxmt .nxmt-security-sources label small { margin-top: 1px; }
 .nxmt-security-actions { margin-bottom: 0; }
 .nxmt-security-meta, .nxmt-security-toolbar, .nxmt-security-tabs {
@@ -53,7 +58,8 @@
     justify-content: space-between;
     margin-top: 7px;
 }
-.nxmt-security-toolbar label { display: flex; gap: 7px; align-items: center; margin: 0; }
+.nxmt .nxmt-security-toolbar label { display: flex; gap: 7px; align-items: center; margin: 0; white-space: nowrap; }
+.nxmt .nxmt-security-toolbar select { width: auto; }
 .nxmt-security-tabs button[aria-pressed="true"] {
     color: white;
     background: #1b5e55;
