@@ -44,12 +44,24 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
       && document.querySelector('[data-security-group="5"] .nxmt-security-check-head').textContent.includes('確認先（サーバー）')`), '20 security categories and all three source labels');
     check(await evaluate(`document.querySelector('[data-security-group="5"] .nxmt-security-check-row [data-state]').textContent === '未確認'
       && document.querySelector('[data-security-group="9"] summary').textContent.includes('CMS側で導入バージョンのみ確認可能')`), 'unavailable server rules and local version coverage');
+    check(await evaluate(`(() => {
+      const panel = document.querySelector('[data-security-panel="categories"]');
+      const rows = Array.from(panel.querySelectorAll('[data-security-group]'));
+      const points = rows.map(row => row.querySelector('[data-category-points]').textContent.trim());
+      const levels = rows.map(row => row.querySelector('[data-importance]').dataset.importance);
+      return document.querySelector('[data-security-category-score]').textContent.includes('/ 100点')
+        && panel.querySelectorAll('[data-security-breakdown="categories"] dd').length === 20
+        && points.every((point, index) => point.endsWith('/ ' + ({high:6, medium:4, low:2})[levels[index]] + '点'))
+        && points[4] === '— / 4点'
+        && panel.textContent.includes('未確認の配点') && rows[8].textContent.includes('採点対象外');
+    })()`), 'category scores, published weights, and all three priority levels');
+    await evaluate(`document.querySelector('[data-security-breakdown="categories"] summary').click()`);
     await evaluate(`document.querySelector('[data-security-tab="headers"]').click();
-      document.querySelector('.nxmt-security-breakdown summary').click()`);
+      document.querySelector('[data-security-breakdown="headers"] summary').click()`);
     check(await evaluate(`!document.querySelector('[data-security-panel="headers"]').hidden
       && document.querySelector('[data-security-score]').textContent === '未採点'
-      && document.querySelector('.nxmt-security-breakdown').open
-      && document.querySelectorAll('.nxmt-security-breakdown dd').length === 6`), 'header tab and point breakdown');
+      && document.querySelector('[data-security-breakdown="headers"]').open
+      && document.querySelectorAll('[data-security-breakdown="headers"] dd').length === 6`), 'header tab and point breakdown');
     check(await evaluate(`(() => {
       const key = document.querySelector('[data-importance-key]');
       const title = key.parentElement.querySelector('h2');
@@ -70,11 +82,12 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
     await evaluate(`document.querySelector('[data-security-form] button').click()`);
     await waitFor(`document.querySelector('[data-security-status]').textContent === '結果を更新しました。'`);
     check(await evaluate(`document.querySelector('[data-security-score]').textContent === '未採点'
-      && document.querySelector('.nxmt-security-breakdown').open
+      && document.querySelector('[data-security-breakdown="headers"]').open
+      && document.querySelector('[data-security-breakdown="categories"]').open
       && document.querySelector('[data-security-panel="headers"]').textContent.includes('応答を取得できませんでした')`), 'unreachable fixture public host remains unscored after recheck');
     check(await evaluate(`(() => {
       const csp = document.querySelector('[data-security-header="csp"]');
-      const badges = csp.querySelector('.nxmt-security-header-badges');
+      const badges = csp.querySelector('.nxmt-security-row-badges');
       return csp.querySelector('[data-importance="high"]').textContent.trim() === '重要度 高'
         && csp.querySelector('[data-header-impact]').textContent.includes('フォームが動かなくなる')
         && csp.querySelector('[data-header-mitigation]').textContent.includes('報告モード')

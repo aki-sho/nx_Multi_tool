@@ -5,6 +5,7 @@ final class Security
 {
     public const SOURCES = ['cms' => 'NexaPress内', 'server' => 'サーバー側', 'http' => '公開応答'];
     public const STATES = ['present' => '確認あり', 'absent' => '設定なし', 'unknown' => '未確認'];
+    private const CATEGORY_POINTS = ['high' => 6, 'medium' => 4, 'low' => 2];
 
     public static function inspect(?array $sources = null, bool $settingsChanged = false): array
     {
@@ -40,21 +41,21 @@ final class Security
         if ($cms) { $facts['NX Multi Tool'] = Registry::VERSION; }
         if ($server) { $facts['PHP'] = PHP_VERSION; }
 
-        $guardItem = static function (string $name, string $field, string $location, string $enabledDetail) use ($guard, $guardInactive): array {
+        $guardItem = static function (string $name, string $field, string $location, string $enabledDetail, bool $scored = true) use ($guard, $guardInactive): array {
             $active = $guard[$field]['enabled'] ?? null;
             $state = is_bool($active) ? $active : ($guardInactive ? false : null);
             $detail = $guardInactive ? 'Access Guardは有効になっていません。'
                 : ($state === true ? $enabledDetail : ($state === false ? 'この設定は無効です。' : 'Access Guardの設定を取得できませんでした。'));
-            return self::item($name, 'cms', 'Access Guard › ' . $location, $state, $detail);
+            return self::item($name, 'cms', 'Access Guard › ' . $location, $state, $detail, $scored);
         };
-        $code = static function (string $name, string $file, array $markers, string $detail) use ($cms): array {
+        $code = static function (string $name, string $file, array $markers, string $detail, bool $scored = true) use ($cms): array {
             $found = $cms && self::hasCode($file, $markers);
             return self::item($name, 'cms', $file, $found ? true : null,
-                $found ? $detail : '対象の処理を確認できませんでした。');
+                $found ? $detail : '対象の処理を確認できませんでした。', $scored);
         };
-        $responseItem = static function (array $row): array {
+        $responseItem = static function (array $row, bool $scored = true): array {
             return self::item($row['name'], 'http', '未ログインで取得した公開トップの応答ヘッダー',
-                ['present' => true, 'absent' => false][$row['state']] ?? null, $row['detail']);
+                ['present' => true, 'absent' => false][$row['state']] ?? null, $row['detail'], $scored);
         };
 
         $loginLock = 'ログイン失敗時の制限が有効です。';
@@ -73,18 +74,18 @@ final class Security
         $frame['name'] = 'X-Frame-Options / frame-ancestors';
 
         $groups = [
-            ['ブルートフォース', 'both', [
+            ['ブルートフォース', 'both', 'high', [
                 $guardItem('ログイン試行回数の制限', 'login_lock', 'ログインロック', $loginLock),
                 $guardItem('ログインページのIP許可制', 'login_page_access', 'ログインページへのアクセス制限', '登録したIPだけにログインページへのアクセスを許可する設定です。'),
                 self::item('リクエスト回数の制限', 'server', 'Webサーバー › リクエスト制限', null, 'サーバーの制限値を取得できません。'),
             ]],
-            ['クレデンシャルスタッフィング', 'cms', [self::twoFactor($cms && $guardLoaded, $guardInactive)]],
-            ['SQLインジェクション', 'cms', [
+            ['クレデンシャルスタッフィング', 'cms', 'high', [self::twoFactor($cms && $guardLoaded, $guardInactive)]],
+            ['SQLインジェクション', 'cms', 'high', [
                 $code('公開記事検索で入力値を分けて渡す処理', 'app/Models/Post.php',
                     ['function publicArchive(', '" AND (p.title LIKE :archive_title', 'self::bindValues($stmt, $params)', '$stmt->execute()'],
                     '本体の公開記事検索で検索語のパラメータ化を確認しました。'),
             ]],
-            ['XSS', 'both', [
+            ['XSS', 'both', 'high', [
                 $code('固定ページの本文を無害化する処理', 'app/Core/PageValidator.php', ['HtmlSanitizer::sanitize('],
                     '本体の固定ページ保存処理で本文の無害化を確認しました。'),
                 $code('投稿の本文を無害化する処理', 'app/Core/PostValidator.php', ['HtmlSanitizer::sanitize('],
@@ -92,64 +93,64 @@ final class Security
                 $responseItem($headers['rows']['csp']),
                 $responseItem($headers['rows']['nosniff']),
             ]],
-            ['DDoS', 'server', [
+            ['DDoS', 'server', 'medium', [
                 self::item('接続数・リクエスト数の制限', 'server', 'Webサーバー › 接続・リクエスト制限', null, 'サーバー内部の制限値を取得できません。'),
             ]],
-            ['CSRF', 'cms', [
+            ['CSRF', 'cms', 'high', [
                 $code('セキュリティチェックなどの管理APIでトークンを検証', 'extensions/' . basename(dirname(__DIR__)) . '/src/Access.php',
                     ['\app\Core\Csrf::requireValid('], 'NX Multi Toolの管理APIで使うトークン検証を確認しました。'),
                 $code('本体の設定保存でトークンを検証', 'app/Controllers/Admin/SettingController.php',
                     ['Csrf::requireValid('], '本体の一般設定を保存する処理で確認しました。'),
             ]],
-            ['リモートコード実行（RCE）', 'both', [
+            ['リモートコード実行（RCE）', 'both', 'high', [
                 $code('メディアを保存する前に形式を検査', 'app/Controllers/Admin/MediaController.php',
-                    ['mime_content_type(', 'isset($this->allowedTypes[$mimeType])', 'move_uploaded_file('], '本体のメディア登録で保存前の形式検査を確認しました。'),
+                    ['mime_content_type(', 'isset($this->allowedTypes[$mimeType])', 'move_uploaded_file('], '本体のメディア登録で保存前の形式検査を確認しました。', false),
                 self::item('アップロード領域のスクリプト実行制限', 'cms', '設置先の .htaccess とWebサーバー設定', null, $uploadsRule),
             ]],
-            ['ファイルアップロード', 'both', [
+            ['ファイルアップロード', 'both', 'medium', [
                 $code('メディアの許可形式に照合', 'app/Controllers/Admin/MediaController.php',
                     ['mime_content_type(', 'isset($this->allowedTypes[$mimeType])'], '登録時に実際のMIME形式を許可一覧と照合します。'),
                 self::item('PHP標準のファイル受信を無効化', 'server', 'PHP › file_uploads', $phpUpload === null ? null : !$phpUpload, $phpUpload === null
-                    ? 'PHPの設定値を取得できません。' : ($phpUpload ? 'ファイル受信が有効です。' : 'ファイル受信が無効です。')),
+                    ? 'PHPの設定値を取得できません。' : ($phpUpload ? 'ファイル受信が有効です。' : 'ファイル受信が無効です。'), false),
                 self::item('アップロードのサイズ上限', 'server', 'PHP › upload_max_filesize', is_string($uploadSize) && trim($uploadSize) !== '' ? true : null,
-                    is_string($uploadSize) && trim($uploadSize) !== '' ? trim($uploadSize) : 'PHPの上限を取得できません。'),
+                    is_string($uploadSize) && trim($uploadSize) !== '' ? trim($uploadSize) : 'PHPの上限を取得できません。', false),
             ]],
-            ['既知脆弱性', 'versions', [
+            ['既知脆弱性', 'versions', 'high', [
                 self::item('本体・拡張の導入バージョン', 'cms', 'NexaPress本体・インストール済み拡張機能',
-                    $version !== null && $extensions !== null ? true : null, $inventory ? implode(' ／ ', $inventory) : 'バージョンを取得できません。'),
+                    $version !== null && $extensions !== null ? true : null, $inventory ? implode(' ／ ', $inventory) : 'バージョンを取得できません。', false),
                 self::item('既知脆弱性への該当', 'cms', 'NexaPress本体・拡張機能の導入情報', null, 'このチェックでは導入バージョンを参照できます。'),
             ]],
-            ['ディレクトリトラバーサル', 'cms', [
+            ['ディレクトリトラバーサル', 'cms', 'medium', [
                 $code('拡張機能ZIPの展開先の制限', 'app/Core/ExtensionInstaller.php',
                     ['function extractPackage(', "str_starts_with(\$entryName, '/')", "str_contains(\$entryName, ':')", 'preg_match('],
                     '本体の拡張機能導入処理でZIP内のパスを検証しています。'),
             ]],
-            ['権限・アクセス制御', 'both', [
+            ['権限・アクセス制御', 'both', 'high', [
                 self::item('セキュリティチェックの管理権限', 'cms', 'NX Multi Tool › 拡張機能の管理権限', true, 'この画面の利用には extensions.manage 権限が必要です。'),
-                $guardItem('ログインURLの変更', 'login_url', 'ログインページの変更', '変更設定が有効です。'),
+                $guardItem('ログインURLの変更', 'login_url', 'ログインページの変更', '変更設定が有効です。', false),
                 $guardItem('管理画面のIP許可制', 'admin_page_access', '管理画面へのアクセス制限', '管理画面のアクセス制限が有効です。'),
                 self::item('管理領域のアクセス制限', 'server', 'Webサーバー › 管理領域へのアクセス設定', null, 'Webサーバーでの制限は未確認です。'),
             ]],
-            ['セッション', 'both', [
+            ['セッション', 'both', 'high', [
                 $code('ログイン時のセッションID再生成', 'app/Core/Auth.php', ['function login(', 'session_regenerate_id(true)'],
                     'NexaPress標準のログイン処理でIDの再生成を確認しました。'),
                 self::item('PHPセッションCookieの保護属性', 'server', 'PHP › セッションCookie設定', $cookie === null ? null
                     : (!empty($cookie['secure']) && !empty($cookie['httponly']) && in_array($sameSite, ['lax', 'strict', 'none'], true)), $sessionCookie),
-                $responseItem($headers['supplement']['cookie']),
+                $responseItem($headers['supplement']['cookie'], false),
             ]],
-            ['SSRF', 'cms', [
+            ['SSRF', 'cms', 'medium', [
                 $code('URL収集の通信先・転送先の制限', 'extensions/' . basename(dirname(__DIR__)) . '/src/HttpClient.php',
                     ['self::origin($p) !== self::origin($root)', 'self::publicIp($ip)', 'CURLOPT_RESOLVE', 'CURLOPT_FOLLOWLOCATION => false', 'self::resolve($headers['],
                     'NX Multi ToolのURL収集で、同一サイトと公開IPへの制限を確認しました。'),
             ]],
-            ['クリックジャッキング', 'server', [$responseItem($frame)]],
-            ['通信の盗聴・改ざん', 'server', [
+            ['クリックジャッキング', 'server', 'high', [$responseItem($frame)]],
+            ['通信の盗聴・改ざん', 'server', 'high', [
                 self::item('公開トップのHTTPS応答', 'http', '未ログインで取得した公開トップの応答',
                     $headers['collected'] ? parse_url($headers['url'], PHP_URL_SCHEME) === 'https' : null,
                     $headers['collected'] ? '応答を取得したURLの方式 ' . strtoupper((string)parse_url($headers['url'], PHP_URL_SCHEME)) : $headers['message']),
                 $responseItem($headers['rows']['hsts']),
             ]],
-            ['公開ファイルからの情報漏えい', 'both', [
+            ['公開ファイルからの情報漏えい', 'both', 'high', [
                 self::item('設定・ログの直接アクセス制限', 'cms', '設置先の .htaccess とWebサーバー設定', null, $internalRule),
                 self::item('CMSのデバッグ出力を無効化', 'cms', 'NexaPress › config/debug.php', $debug === null ? null : !$debug,
                     $debug === null ? '設定値を取得できません。' : ($debug ? 'デバッグが有効です。' : 'デバッグが無効です。')),
@@ -157,26 +158,31 @@ final class Security
                     $displayErrors === false ? '設定値を取得できません。' : (self::flag($displayErrors) ? 'エラーの画面出力が有効です。' : 'エラーの画面出力が無効です。')),
                 $responseItem($headers['rows']['referrer']),
             ]],
-            ['サプライチェーン', 'cms', [
+            ['サプライチェーン', 'cms', 'medium', [
                 $code('本体更新ZIPの整合性を確認する処理', 'app/Core/UpdatePackage.php', ["hash_file('sha256',", 'hash_equals($expectedHash, $actualHash)'],
                     '本体の更新処理が配布情報のSHA-256と取得したZIPを照合します。'),
                 $code('拡張カタログの配布元設定', 'config/extensions.php', ["'catalog_url'", "'allowed_download_hosts'"],
                     '受け付ける拡張ZIPの配布元を設定する記述を確認しました。'),
             ]],
-            ['オープンリダイレクト', 'cms', [
+            ['オープンリダイレクト', 'cms', 'low', [
                 $code('NX Multi Toolの設定保存後の転送先', 'extensions/' . basename(dirname(__DIR__)) . '/src/AdminController.php',
                     ["header('Location: ' . Registry::url(), true, 303)"], '確認した設定保存処理の転送先は拡張機能のダッシュボードです。'),
             ]],
-            ['Webキャッシュ', 'both', [
+            ['Webキャッシュ', 'both', 'medium', [
                 $cache,
-                $responseItem($headers['supplement']['cache']),
+                $responseItem($headers['supplement']['cache'], false),
                 self::item('サーバーの共有キャッシュ設定', 'server', 'Webサーバー › キャッシュ設定', null, '配信環境のキャッシュ方針を取得できません。'),
             ]],
-            ['CORS', 'server', [$responseItem($headers['supplement']['cors'])]],
+            ['CORS', 'server', 'low', [
+                $responseItem($headers['supplement']['cors'], false),
+                self::item('連携先だけを許可するCORS設定', 'server', 'Webサーバー・API › CORS設定', null,
+                    'この確認では、連携先ごとの許可範囲や認証付き応答の設定を取得できません。'),
+            ]],
         ];
 
         $items = [];
-        foreach ($groups as $index => [$name, $area, $rows]) {
+        $categoryScore = ['max' => 0, 'earned' => 0, 'pending' => 0];
+        foreach ($groups as $index => [$name, $area, $importance, $rows]) {
             foreach ($rows as &$row) {
                 if (!$sources[$row['source']]) {
                     $row['state'] = 'unknown';
@@ -184,17 +190,33 @@ final class Security
                 }
             }
             unset($row);
-            $items[] = ['number' => $index + 1, 'name' => $name, 'area' => $area, 'rows' => $rows];
+            $score = self::categoryScore($rows, self::CATEGORY_POINTS[$importance]);
+            foreach ($score as $key => $points) { $categoryScore[$key] += $points; }
+            $items[] = ['number' => $index + 1, 'name' => $name, 'area' => $area, 'importance' => $importance,
+                'rows' => $rows, 'score' => $score];
         }
 
-        return ['items' => $items, 'facts' => $facts, 'public' => $headers, 'policies' => $policies, 'checked_at' => time(),
+        return ['items' => $items, 'facts' => $facts, 'public' => $headers, 'policies' => $policies,
+            'category_score' => $categoryScore, 'category_points' => self::CATEGORY_POINTS, 'checked_at' => time(),
             'observations' => $cms ? self::logs() : null];
     }
 
-    private static function item(string $name, string $source, string $location, ?bool $enabled, string $detail): array
+    private static function item(string $name, string $source, string $location, ?bool $enabled, string $detail, bool $scored = true): array
     {
         $state = $enabled === null ? 'unknown' : ($enabled ? 'present' : 'absent');
-        return compact('name', 'source', 'location', 'state', 'detail');
+        return compact('name', 'source', 'location', 'state', 'detail', 'scored');
+    }
+
+    private static function categoryScore(array $rows, int $maxPoints): array
+    {
+        // Use tenths of a point so displayed category totals add up exactly.
+        $max = $maxPoints * 10;
+        $states = array_count_values(array_column(array_filter($rows, static fn(array $row): bool => $row['scored']), 'state'));
+        $total = array_sum($states);
+        if ($total === 0) { return ['max' => $max, 'earned' => 0, 'pending' => $max]; }
+        $pending = (int)round($max * ($states['unknown'] ?? 0) / $total);
+        $earned = min($max - $pending, (int)round($max * ($states['present'] ?? 0) / $total));
+        return compact('max', 'earned', 'pending');
     }
 
     private static function attempt(callable $read)
@@ -255,7 +277,7 @@ final class Security
 
     private static function twoFactor(bool $available, bool $inactive): array
     {
-        $name = '管理者の二要素認証';
+        $name = '管理者全員の二要素認証';
         $location = 'Access Guard › 二要素認証';
         if (!$available || !is_callable([\NexaPressAccessGuard\TwoFactor::class, 'all'])) {
             return self::item($name, 'cms', $location, $inactive ? false : null,
@@ -272,7 +294,7 @@ final class Security
         if (!$counts || $counts[0] === 0) {
             return self::item($name, 'cms', $location, null, '管理者の登録状況を確認できません。');
         }
-        return self::item($name, 'cms', $location, $counts[1] > 0,
+        return self::item($name, 'cms', $location, $counts[1] === $counts[0],
             '管理者ロール ' . $counts[0] . '名のうち ' . $counts[1] . '名が設定済みです。');
     }
 
@@ -282,10 +304,10 @@ final class Security
         $location = 'NX Nitro Cache › キャッシュ対象';
         if (!$cms || $extensions === null) { return self::item($name, 'cms', $location, null, '導入状況を取得できません。'); }
         $extension = $extensions['nx_nitro_cache'] ?? null;
-        if (empty($extension['is_enabled'])) { return self::item($name, 'cms', $location, false, 'NX Nitro Cacheは有効になっていません。'); }
+        if (empty($extension['is_enabled'])) { return self::item($name, 'cms', $location, false, 'NX Nitro Cacheは有効になっていません。', false); }
         $active = is_callable([\NxNitroCache\Settings::class, 'get'])
             ? self::attempt(static fn() => \NxNitroCache\Settings::get('enabled')) : null;
-        if ($active === false) { return self::item($name, 'cms', $location, false, 'NX Nitro Cacheのページキャッシュが無効です。'); }
+        if ($active === false) { return self::item($name, 'cms', $location, false, 'NX Nitro Cacheのページキャッシュが無効です。', false); }
         $detected = $active === true && self::hasCode('extensions/' . $extension['folder'] . '/includes/PageCache.php', ["if (!empty(\$_SESSION)) { return 'session'; }"]);
         return self::item($name, 'cms', $location, $detected ? true : null,
             $detected ? 'NX Nitro Cacheでセッション付きの応答が保存対象から外れる処理を確認しました。' : '現在のキャッシュ除外処理を確認できません。');

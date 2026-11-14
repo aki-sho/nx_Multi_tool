@@ -59,7 +59,17 @@ $security = \NxMultiTool\Security::inspect();
 check(array_column($security['items'], 'area') === ['both', 'cms', 'cms', 'both', 'server', 'cms', 'both', 'both', 'versions', 'cms', 'both', 'both', 'cms', 'server', 'server', 'both', 'cms', 'cms', 'both', 'server'], '20 security categories with approved confirmation sources');
 check($security['items'][2]['rows'][0]['state'] === 'present' && $security['items'][12]['rows'][0]['state'] === 'present', 'checks find scoped evidence in the installed CMS and extension');
 check($security['items'][4]['rows'][0]['state'] === 'unknown' && array_column($security['items'][8]['rows'], 'state') === ['present', 'unknown'], 'unavailable server rules and vulnerability matches stay unconfirmed');
+check($security['category_score']['max'] === 1000
+    && array_count_values(array_column($security['items'], 'importance')) === ['high' => 12, 'medium' => 6, 'low' => 2],
+    '20 weighted categories total 100 points');
+check($security['items'][2]['score'] === ['max' => 60, 'earned' => 60, 'pending' => 0]
+    && $security['items'][3]['score'] === ['max' => 60, 'earned' => 30, 'pending' => 30],
+    'confirmed protections earn points and unread public checks stay pending');
+check($security['items'][8]['score'] === ['max' => 60, 'earned' => 0, 'pending' => 60]
+    && $security['items'][18]['score'] === ['max' => 40, 'earned' => 0, 'pending' => 40],
+    'version information and inactive optional cache do not count as protection or a penalty');
 $security = \NxMultiTool\Security::inspect([]);
+check($security['category_score'] === ['max' => 1000, 'earned' => 0, 'pending' => 1000], 'all points remain pending when every source is omitted');
 foreach ($security['items'] as $item) {
     check(array_unique(array_column($item['rows'], 'state')) === ['unknown'], 'excluded sources are unconfirmed for group ' . $item['number']);
 }

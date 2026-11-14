@@ -73,7 +73,7 @@
       const groups = Array.from(results.querySelectorAll('[data-security-group][open]'), item => item.dataset.securityGroup);
       const openHeaders = Array.from(results.querySelectorAll('[data-security-header][open]'), item => item.dataset.securityHeader);
       const supplements = Array.from(results.querySelectorAll('[data-security-supplement], [data-security-references]'), item => item.open);
-      const scoreOpen = results.querySelector('.nxmt-security-breakdown').open;
+      const openBreakdowns = Array.from(results.querySelectorAll('[data-security-breakdown][open]'), item => item.dataset.securityBreakdown);
       const openSettings = Array.from(results.querySelectorAll('[data-security-header] [data-header-settings][open]'),
         item => item.closest('[data-security-header]').dataset.securityHeader);
       const header = fields.get('header');
@@ -92,7 +92,9 @@
         openSettings.forEach(id => {
           results.querySelector('[data-security-header="' + id + '"] [data-header-settings]').open = true;
         });
-        results.querySelector('.nxmt-security-breakdown').open = scoreOpen;
+        results.querySelectorAll('[data-security-breakdown]').forEach(item => {
+          item.open = openBreakdowns.includes(item.dataset.securityBreakdown);
+        });
         if (header) {
           active = 'headers';
           filter = 'all';

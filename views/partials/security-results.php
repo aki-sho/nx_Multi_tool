@@ -3,6 +3,12 @@ use NxMultiTool\Security;
 
 $public = $data['public'];
 $score = $public['score'] === null ? '未採点' : $public['score'] . ' / 100点';
+$formatPoints = static fn(int $tenths): string => ($tenths % 10 === 0)
+    ? (string)intdiv($tenths, 10) : number_format($tenths / 10, 1);
+$categoryTotal = $data['category_score'];
+$scoreText = static fn(array $points): string => ($points['pending'] === $points['max'] ? '—' : $formatPoints($points['earned']))
+    . ' / ' . $formatPoints($points['max']) . '点';
+$pendingText = static fn(array $points): string => '未確認の配点 ' . $formatPoints($points['pending']) . '点';
 $scope = [
     'cms' => ['CMS側', '確認先（CMS）'],
     'both' => ['両方', '確認先（CMS・サーバー）'],
@@ -14,6 +20,10 @@ $badge = static function (string $state): void { ?>
 <?php };
 $guidance = require dirname(__DIR__, 2) . '/config/header-guidance.php';
 $levels = ['high' => '高', 'medium' => '中', 'low' => '低'];
+$weightLabels = [];
+foreach ($data['category_points'] as $level => $points) {
+    $weightLabels[] = $levels[$level] . $points . '点';
+}
 $importanceBadge = static function (string $level) use ($levels): void { ?>
     <span class="nxmt-security-badge nxmt-security-importance" data-importance="<?= e($level) ?>">重要度 <?= e($levels[$level]) ?></span>
 <?php };
@@ -22,9 +32,9 @@ $headerRow = static function (array $row, string $id) use ($badge, $importanceBa
     ?>
     <details class="nxmt-security-header" data-security-header="<?= e($id) ?>"<?php if (isset($row['state'])): ?> data-security-row="<?= e($row['state']) ?>"<?php endif; ?>>
         <summary>
-            <span class="nxmt-security-header-summary">
+            <span class="nxmt-security-row-summary">
                 <span><code><?= e($row['name']) ?></code><small><?= e($row['purpose']) ?></small></span>
-                <span class="nxmt-security-header-badges">
+                <span class="nxmt-security-row-badges">
                     <?php if (isset($row['state'])) { $badge($row['state']); } ?>
                     <?php $importanceBadge($guide['importance']); ?>
                 </span>
@@ -55,7 +65,9 @@ $headerRow = static function (array $row, string $id) use ($badge, $importanceBa
 </div>
 <div class="nxmt-security-toolbar">
     <div class="nxmt-security-tabs" role="group" aria-label="結果の表示">
-        <button type="button" class="secondary" data-security-tab="categories" aria-pressed="true" aria-controls="nxmt-security-categories">対策一覧（20分類）</button>
+        <button type="button" class="secondary" data-security-tab="categories" aria-pressed="true" aria-controls="nxmt-security-categories">
+            対策一覧（20分類） <span class="nxmt-security-badge" data-security-category-score><?= e($scoreText($categoryTotal)) ?></span>
+        </button>
         <button type="button" class="secondary" data-security-tab="headers" aria-pressed="false" aria-controls="nxmt-security-headers">
             公開ヘッダー <span class="nxmt-security-badge" data-security-score><?= e($score) ?></span>
         </button>
@@ -68,19 +80,47 @@ $headerRow = static function (array $row, string $id) use ($badge, $importanceBa
     </label>
 </div>
 <section class="nxmt-panel nxmt-security-results" id="nxmt-security-categories" data-security-panel="categories" aria-label="対策一覧（20分類）">
-    <p class="nxmt-muted">確認できた範囲を、対策ごとに表示します。</p>
+    <div class="nxmt-security-panel-heading">
+        <h2>対策一覧</h2>
+        <div class="nxmt-security-importance-key">
+            <span>重要度（高・中・低）</span>
+            <small>一般的な公開サイトで確認する優先度です。</small>
+        </div>
+    </div>
+    <p class="nxmt-muted">確認できた対策の得点 <?= e($scoreText($categoryTotal)) ?>。<?= e($pendingText($categoryTotal)) ?>。</p>
+    <details class="nxmt-security-breakdown" data-security-breakdown="categories">
+        <summary>採点の内訳</summary>
+        <p class="nxmt-muted">分類の配点は<?= e(implode('、', $weightLabels)) ?>です。分類内の採点対象に均等に割り振り、「確認あり」は加点、「設定なし」は0点、「未確認」は保留とします。</p>
+        <p class="nxmt-muted">この機能が確認した対策の範囲で採点します。</p>
+        <dl>
+            <?php foreach ($data['items'] as $group): ?>
+                <div>
+                    <dt><?= (int)$group['number'] ?>. <?= e($group['name']) ?><small>重要度 <?= e($levels[$group['importance']]) ?></small></dt>
+                    <dd><?= e($scoreText($group['score'])) ?>
+                        <?php if ($group['score']['pending'] > 0): ?><small><?= e($pendingText($group['score'])) ?></small><?php endif; ?>
+                    </dd>
+                </div>
+            <?php endforeach; ?>
+        </dl>
+    </details>
     <?php foreach ($data['items'] as $group):
         [$areaLabel, $locationLabel] = $scope[$group['area']];
         $counts = array_count_values(array_column($group['rows'], 'state'));
     ?>
         <details class="nxmt-security-group" data-security-group="<?= (int)$group['number'] ?>" <?= $group['number'] === 1 ? 'open' : '' ?>>
             <summary>
-                <span class="nxmt-security-group-title">
-                    <strong><?= (int)$group['number'] ?>. <?= e($group['name']) ?></strong>
-                    <span class="nxmt-security-badge"><?= e($areaLabel) ?></span>
-                </span>
-                <span class="nxmt-security-counts nxmt-muted">
-                    <?php foreach (Security::STATES as $state => $label): ?><span><?= e($label) ?> <?= $counts[$state] ?? 0 ?></span><?php endforeach; ?>
+                <span class="nxmt-security-row-summary">
+                    <span>
+                        <strong><?= (int)$group['number'] ?>. <?= e($group['name']) ?></strong>
+                        <span class="nxmt-security-badge"><?= e($areaLabel) ?></span>
+                        <small class="nxmt-security-counts nxmt-muted">
+                            <?php foreach (Security::STATES as $state => $label): ?><span><?= e($label) ?> <?= $counts[$state] ?? 0 ?></span><?php endforeach; ?>
+                        </small>
+                    </span>
+                    <span class="nxmt-security-row-badges">
+                        <span class="nxmt-security-badge nxmt-security-points" data-category-points><?= e($scoreText($group['score'])) ?></span>
+                        <?php $importanceBadge($group['importance']); ?>
+                    </span>
                 </span>
             </summary>
             <div class="nxmt-security-meter" aria-hidden="true">
@@ -95,7 +135,10 @@ $headerRow = static function (array $row, string $id) use ($badge, $importanceBa
                             <small><?= e($row['location']) ?></small>
                             <p><?= e($row['detail']) ?></p>
                         </div>
-                        <?php $badge($row['state']); ?>
+                        <div class="nxmt-security-row-badges">
+                            <?php if (!$row['scored']): ?><span class="nxmt-security-badge">採点対象外</span><?php endif; ?>
+                            <?php $badge($row['state']); ?>
+                        </div>
                     </div>
                 <?php endforeach; ?>
             </div>
@@ -124,7 +167,7 @@ $headerRow = static function (array $row, string $id) use ($badge, $importanceBa
     <p class="nxmt-muted"><?= e($public['message']) ?></p>
     <p class="nxmt-muted">適用先は公開HTMLです。既存のPHPヘッダーは優先されます。設定後に「再チェック」で実際の公開応答を確認できます。</p>
     <?php if ($data['policies'] === null): ?><p class="nxmt-notice is-error">公開ヘッダーの保存内容を読み取れませんでした。</p><?php endif; ?>
-    <details class="nxmt-security-breakdown">
+    <details class="nxmt-security-breakdown" data-security-breakdown="headers">
         <summary>採点の内訳 <span class="nxmt-security-badge"><?= e($score) ?></span></summary>
         <p class="nxmt-muted">公開トップの主要6項目に対する独自の配点です。</p>
         <dl>
