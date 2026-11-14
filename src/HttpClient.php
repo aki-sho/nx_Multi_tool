@@ -89,7 +89,7 @@ final class HttpClient
         $relative = rtrim($relative, '/');
         return $relative === $loginPath || $relative === '/public' . $loginPath;
     }
-    public static function fetch(string $url, string $base, bool $head = false, int $redirects = 0, bool $range = false, int &$requests = 0, array $history = []): array
+    public static function fetch(string $url, string $base, bool $head = false, int $redirects = 0, bool $range = false, int &$requests = 0, array $history = [], bool $includeHeaderValues = false): array
     {
         if (!function_exists('curl_init')) { throw new \RuntimeException('HTTP取得にはPHP cURLが必要です。'); }
         $safe = self::resolve($url, $base . '/', $base);
@@ -102,14 +102,25 @@ final class HttpClient
         foreach ($ips as $ip) { if (!self::publicIp($ip)) { throw new \RuntimeException('内部・予約IPへの通信は許可されていません。'); } }
         $port = $p['port'] ?? ($p['scheme'] === 'https' ? 443 : 80);
         $headers = []; $body = ''; $size = 0; $limit = $head ? 0 : ($range ? 512 : 1024 * 1024); $overflow = false;
+        $headerValues = []; $headerBytes = 0;
         $ch = curl_init($safe);
         curl_setopt_array($ch, [CURLOPT_FOLLOWLOCATION => false, CURLOPT_CONNECTTIMEOUT => 3, CURLOPT_TIMEOUT => 8,
             CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS, CURLOPT_PROXY => '', CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2, CURLOPT_RESOLVE => [$host . ':' . $port . ':' . (str_contains($ips[0], ':') ? '[' . $ips[0] . ']' : $ips[0])],
             CURLOPT_USERAGENT => 'NX-Multi-Tool/' . Registry::VERSION . ' (+site administrator initiated)', CURLOPT_NOBODY => $head,
-            CURLOPT_HEADERFUNCTION => static function ($handle, string $line) use (&$headers) {
-                if (preg_match('#^HTTP/#i', $line)) { $headers = []; }
-                if (str_contains($line, ':')) { [$key, $value] = explode(':', $line, 2); $headers[strtolower(trim($key))] = substr(trim($value), 0, 4096); }
+            CURLOPT_HEADERFUNCTION => static function ($handle, string $line) use (&$headers, &$headerValues, &$headerBytes, $includeHeaderValues) {
+                if (preg_match('#^HTTP/#i', $line)) { $headers = []; $headerValues = []; $headerBytes = 0; }
+                if (str_contains($line, ':')) {
+                    [$key, $value] = explode(':', $line, 2);
+                    $key = strtolower(trim($key));
+                    $value = trim($value);
+                    $headers[$key] = substr($value, 0, 4096);
+                    if ($includeHeaderValues) {
+                        $headerBytes += strlen($line);
+                        if ($headerBytes > 65536) { return 0; }
+                        $headerValues[$key][] = $value;
+                    }
+                }
                 return strlen($line);
             }, CURLOPT_WRITEFUNCTION => static function ($handle, string $chunk) use (&$body, &$size, &$overflow, $limit) {
                 $size += strlen($chunk);
@@ -129,9 +140,11 @@ final class HttpClient
                 return ['url' => $safe, 'status' => $status, 'headers' => $headers, 'body' => '', 'redirected' => $redirects > 0,
                     'requests' => $requests, 'history' => $history, 'blocked' => true, 'blocked_to' => $next ?? '外部または不正な転送先'];
             }
-            $result = self::fetch($next, $base, $head, $redirects + 1, $range, $requests, $history); $result['redirected'] = true; return $result;
+            $result = self::fetch($next, $base, $head, $redirects + 1, $range, $requests, $history, $includeHeaderValues); $result['redirected'] = true; return $result;
         }
-        if ($head && in_array($status, [405, 501], true)) { return self::fetch($safe, $base, false, $redirects, true, $requests, $history); }
-        return ['url' => $safe, 'status' => $status, 'headers' => $headers, 'body' => $body, 'redirected' => $redirects > 0, 'requests' => $requests, 'history' => $history];
+        if ($head && in_array($status, [405, 501], true)) { return self::fetch($safe, $base, false, $redirects, true, $requests, $history, $includeHeaderValues); }
+        $result = ['url' => $safe, 'status' => $status, 'headers' => $headers, 'body' => $body, 'redirected' => $redirects > 0, 'requests' => $requests, 'history' => $history];
+        if ($includeHeaderValues) { $result['header_values'] = $headerValues; }
+        return $result;
     }
 }

@@ -34,6 +34,92 @@
       form.elements.namedItem('length').value = preset[0]; ['upper', 'lower', 'digit'].forEach(name => form.elements.namedItem(name).checked = true); form.elements.namedItem('symbols').checked = preset[1];
     });
   });
+  const security = root.querySelector('[data-security-check]');
+  if (security) {
+    const form = security.querySelector('[data-security-form]');
+    const results = security.querySelector('[data-security-results]');
+    const message = security.querySelector('[data-security-status]');
+    const submit = form.querySelector('[type="submit"]');
+    let active = 'categories';
+    let filter = 'all';
+
+    function updateView() {
+      const select = results.querySelector('[data-security-filter]');
+      select.value = filter;
+      results.querySelectorAll('[data-security-tab]').forEach(button => {
+        button.setAttribute('aria-pressed', String(button.dataset.securityTab === active));
+      });
+      results.querySelectorAll('[data-security-row]').forEach(row => {
+        row.hidden = filter !== 'all' && row.dataset.securityRow !== filter;
+      });
+      results.querySelectorAll('[data-security-group], [data-security-supplement]').forEach(group => {
+        group.hidden = !group.querySelector('[data-security-row]:not([hidden])');
+      });
+      results.querySelectorAll('[data-security-unfiltered]').forEach(item => { item.hidden = filter !== 'all'; });
+      results.querySelectorAll('[data-security-panel]').forEach(panel => {
+        panel.hidden = panel.dataset.securityPanel !== active;
+        const mainRows = panel.querySelector('[data-security-main-headers]') || panel;
+        panel.querySelector('[data-security-empty]').hidden = !!mainRows.querySelector('[data-security-row]:not([hidden])');
+      });
+    }
+
+    form.addEventListener('change', () => { message.textContent = '「再チェック」で選択を反映します。'; });
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (submit.disabled) return;
+      submit.disabled = true;
+      const fields = new FormData(form);
+      fields.set('op', 'inspect');
+      form.querySelector('fieldset').disabled = true;
+      results.setAttribute('aria-busy', 'true');
+      message.textContent = '確認中…';
+      const openGroups = Array.from(results.querySelectorAll('[data-security-group][open]'), group => group.dataset.securityGroup);
+      const scoreOpen = results.querySelector('.nxmt-security-breakdown').open;
+      try {
+        const data = await api('security_check', fields);
+        results.innerHTML = data.html;
+        results.querySelectorAll('[data-security-group]').forEach(group => {
+          group.open = openGroups.includes(group.dataset.securityGroup);
+        });
+        results.querySelector('.nxmt-security-breakdown').open = scoreOpen;
+        updateView();
+        message.textContent = '結果を更新しました。';
+      } catch (error) {
+        message.textContent = error.message;
+      } finally {
+        results.removeAttribute('aria-busy');
+        form.querySelector('fieldset').disabled = false;
+        submit.disabled = false;
+      }
+    });
+
+    results.addEventListener('change', event => {
+      if (event.target.matches('[data-security-filter]')) {
+        filter = event.target.value;
+        updateView();
+      }
+    });
+    results.addEventListener('click', event => {
+      const tab = event.target.closest('[data-security-tab]');
+      if (tab) {
+        active = tab.dataset.securityTab;
+        updateView();
+        return;
+      }
+      const jump = event.target.closest('[data-security-jump]');
+      if (jump) {
+        const group = results.querySelector('[data-security-group="' + jump.dataset.securityJump + '"]');
+        if (!group) return;
+        if (group.hidden) filter = 'all';
+        active = 'categories';
+        group.open = true;
+        updateView();
+        const summary = group.querySelector('summary');
+        summary.focus();
+        summary.scrollIntoView({block: 'nearest'});
+      }
+    });
+  }
   const links = root.querySelector('[data-link-search]');
   links?.addEventListener('input', () => {
     const q = links.value.trim().toLocaleLowerCase(); let visible = 0;

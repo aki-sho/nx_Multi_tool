@@ -33,6 +33,35 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
     check(await evaluate('!document.querySelector("input[name=site_url]") && document.querySelector(".nxmt-site-info").textContent.includes("サイト名") && document.querySelector(".nxmt-site-info a").href === location.origin + "/"'),'dashboard shows CMS site information without a URL input');
     const tools=['site_links','qr','calc','bcrypt','password','timer','link_inspector','access_log','security_check','post_data','site_urls','search_replace','comment_manager'];
     for(const tool of tools){await go('/admin/extensions/nx_Multi_tool/dashboard?tool='+tool);check(await evaluate('!!document.querySelector("[data-nxmt]")&&!document.querySelector(".nxmt-notice.is-error")'),'render '+tool);}
+    await go('/admin/extensions/nx_Multi_tool/dashboard?tool=security_check');
+    check(await evaluate(`document.querySelectorAll('[data-security-group]').length === 20
+      && document.querySelector('[data-security-group="1"]').open
+      && document.querySelector('[data-security-group="1"] .nxmt-security-check-head').textContent.includes('確認先（CMS・サーバー）')
+      && document.querySelector('[data-security-group="2"] .nxmt-security-check-head').textContent.includes('確認先（CMS）')
+      && document.querySelector('[data-security-group="5"] .nxmt-security-check-head').textContent.includes('確認先（サーバー）')`), '20 security categories and all three source labels');
+    check(await evaluate(`document.querySelector('[data-security-group="5"] .nxmt-security-check-row [data-state]').textContent === '未確認'
+      && document.querySelector('[data-security-group="9"] summary').textContent.includes('CMS側で導入バージョンのみ確認可能')`), 'unavailable server rules and local version coverage');
+    await evaluate(`document.querySelector('[data-security-tab="headers"]').click();
+      document.querySelector('.nxmt-security-breakdown summary').click()`);
+    check(await evaluate(`!document.querySelector('[data-security-panel="headers"]').hidden
+      && document.querySelector('[data-security-score]').textContent === '未採点'
+      && document.querySelector('.nxmt-security-breakdown').open
+      && document.querySelectorAll('.nxmt-security-breakdown dd').length === 6`), 'header tab and point breakdown');
+    check((await api('security_check', {op:'inspect'}, false)).status === 419, 'rechecking requires CSRF');
+    await evaluate(`document.querySelector('[data-security-form] button').click()`);
+    await waitFor(`document.querySelector('[data-security-status]').textContent === '結果を更新しました。'`);
+    check(await evaluate(`document.querySelector('[data-security-score]').textContent === '未採点'
+      && document.querySelector('.nxmt-security-breakdown').open
+      && document.querySelector('[data-security-panel="headers"]').textContent.includes('応答を取得できませんでした')`), 'unreachable fixture public host remains unscored after recheck');
+    await evaluate(`document.querySelector('.nxmt-security-header summary').click();
+      document.querySelector('[data-security-jump="15"]').click()`);
+    check(await evaluate(`!document.querySelector('[data-security-panel="categories"]').hidden
+      && document.querySelector('[data-security-group="15"]').open`), 'go from public header to its category');
+    await evaluate(`const state = document.querySelector('[data-security-filter]');
+      state.value = 'present'; state.dispatchEvent(new Event('change', {bubbles:true}))`);
+    check(await evaluate(`document.querySelector('[data-security-group="5"]').hidden
+      && !document.querySelector('[data-security-group="9"]').hidden
+      && document.querySelector('[data-security-group="9"] [data-security-row="unknown"]').hidden`), 'state filter hides unconfirmed categories and rows');
     await go('/admin/extensions/nx_Multi_tool/dashboard?tool=password');
     await evaluate(`document.querySelector('[data-password-preset]').value='strong';document.querySelector('[data-password-preset]').dispatchEvent(new Event('change'));document.querySelector('[data-nxmt-api] button[type=submit]').click()`);
     await waitFor('document.querySelector("[data-api-output]").value.length>0');

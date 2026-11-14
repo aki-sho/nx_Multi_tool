@@ -16,8 +16,10 @@ assert site.resolve().is_relative_to(root.resolve())
 for name in ['app', 'public/themes', 'public/assets']:
     shutil.copytree(cms / name, site / name, dirs_exist_ok=True)
 (site / 'config').mkdir(exist_ok=True)
-for name in ['version', 'theme', 'url', 'general', 'debug']:
+for name in ['version', 'theme', 'url', 'general', 'debug', 'extensions']:
     shutil.copyfile(cms / f'config/{name}.php', site / f'config/{name}.php')
+for name in ['.htaccess', 'public/.htaccess']:
+    shutil.copyfile(cms / name, site / name)
 (site / 'config/url.php').write_text("<?php return ['site_url_mode'=>'root','post_url_type'=>'post_slug','page_url_type'=>'page_slug'];", encoding='utf-8')
 (site / 'storage').mkdir(exist_ok=True)
 (site / 'storage/logs').mkdir(exist_ok=True)

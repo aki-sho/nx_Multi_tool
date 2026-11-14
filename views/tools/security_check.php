@@ -1,1 +1,23 @@
-<section class="nxmt-panel"><h2>現在の確認結果</h2><p>確認日時：<?= e(date('Y-m-d H:i:s', $data['checked_at'])) ?></p><p><?= e($data['observations']) ?></p><div class="nxmt-inline"><?php foreach ($data['facts'] as $key => $value): ?><span class="nxmt-fact"><?= e($key) ?>：<?= e($value) ?></span><?php endforeach; ?></div><p>設定と既存ログで確認できる範囲を表示します。全コードの監査・攻撃テスト・自動修正・外部への情報送信は行いません。</p><a class="button" href="<?= e(\NxMultiTool\Registry::url('security_check')) ?>">再チェック</a></section><div class="nxmt-cards"><?php foreach ($data['items'] as $item): ?><section class="nxmt-card"><h3><?= e($item['name']) ?></h3><div class="nxmt-risk <?= e($item['level']) ?>"><span></span></div><strong><?= e($item['label']) ?></strong><p><?= e($item['reason']) ?></p></section><?php endforeach; ?></div>
+<?php use NxMultiTool\Security; ?>
+<section data-security-check>
+    <form class="nxmt-panel nxmt-security-scope" data-security-form>
+        <fieldset>
+            <legend>読み取り元</legend>
+            <div class="nxmt-security-sources">
+                <?php foreach (['cms' => '本体・拡張の設定', 'server' => 'PHPの実行設定', 'http' => 'ヘッダー・Cookie属性'] as $source => $detail): ?>
+                    <label>
+                        <input type="checkbox" name="sources[]" value="<?= e($source) ?>" checked>
+                        <span><strong><?= e(Security::SOURCES[$source]) ?></strong><small><?= e($detail) ?></small></span>
+                    </label>
+                <?php endforeach; ?>
+            </div>
+        </fieldset>
+        <div class="nxmt-inline nxmt-security-actions">
+            <button type="submit">再チェック</button>
+            <span class="nxmt-muted" role="status" data-security-status></span>
+        </div>
+    </form>
+    <div data-security-results>
+        <?php require dirname(__DIR__) . '/partials/security-results.php'; ?>
+    </div>
+</section>

@@ -11,7 +11,9 @@ namespace NxMultiTool {
         if (!$responses) { throw new \RuntimeException('Unexpected HTTP request'); }
         $response=array_shift($responses); $handle->status=$response['status'];
         $header=$handle->options[CURLOPT_HEADERFUNCTION];$header($handle,'HTTP/1.1 '.$response['status']." Test\r\n");
-        foreach($response['headers']??[] as $key=>$value){$header($handle,$key.': '.$value."\r\n");}
+        foreach ($response['headers'] ?? [] as $key => $values) {
+            foreach ((array)$values as $value) { $header($handle, $key . ': ' . $value . "\r\n"); }
+        }
         $body=$response['body']??'';
         if(empty($handle->options[CURLOPT_NOBODY]) && $body!=='') {
             if($handle->options[CURLOPT_WRITEFUNCTION]($handle,$body)!==strlen($body))return false;
@@ -27,6 +29,7 @@ namespace {
     use NxMultiTool\HttpClient;
     use NxMultiTool\ResponseClassifier;
     use NxMultiTool\Discovery;
+    use NxMultiTool\SecurityHeaders;
     use NxMultiTool\SiteInfo;
     $checks=0;
     function expect(bool $ok,string $label):void {global $checks;$checks++;if(!$ok)throw new \RuntimeException('FAIL '.$label);}
@@ -77,5 +80,48 @@ namespace {
     $response = fetchCase([['status'=>302, 'headers'=>['Location'=>'/inventory-login-test']]]);
     expect($response['blocked'] && count($GLOBALS['nxmt_http_calls']) === 1, 'redirect to the current custom login URL is not followed');
     \NexaPressAccessGuard\Settings::saveSection('login_url', array_replace($loginSettings, ['enabled'=>false]));
+
+    $siteUrl = 'https://instance.example.test/blog/';
+    $GLOBALS['nxmt_http_calls'] = [];
+    $initial = SecurityHeaders::inspect($siteUrl, false);
+    expect($initial['score'] === null && !$GLOBALS['nxmt_http_calls'], 'initial screen waits for a public response check');
+    $headerBag = [
+        'strict-transport-security' => ['max-age=31536000'],
+        'content-security-policy' => ["default-src 'self'; frame-ancestors 'none'"],
+        'x-content-type-options' => ['nosniff'],
+        'referrer-policy' => ['unsafe-url, strict-origin-when-cross-origin'],
+        'permissions-policy' => ['camera=(), microphone=(self)'],
+        'set-cookie' => [session_name() . '=fixture-session-value; Path=/; Secure; HttpOnly; SameSite=Lax', 'theme=fixture-theme-value'],
+        'cache-control' => ['no-store'],
+    ];
+    $_SERVER['HTTP_COOKIE'] = session_name() . '=fixture-admin-session';
+    $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer fixture-admin-authorization';
+    $GLOBALS['nxmt_http_responses'] = [[
+        'status' => 200,
+        'headers' => $headerBag + ['Content-Type' => 'text/html; charset=UTF-8'],
+        'body' => '<html><h1>Public fixture</h1></html>',
+    ]];
+    $public = SecurityHeaders::inspect($siteUrl, true);
+    expect($public['collected'] && $public['http'] === 200 && $public['score'] === 100, 'six effective header checks score 100');
+    expect(array_column($public['rows'], 'points') === [25, 30, 20, 10, 10, 5], 'approved distribution of header points');
+    expect($public['supplement']['cookie']['state'] === 'present' && str_contains($public['supplement']['cookie']['detail'], 'HttpOnly あり'),
+        'session attributes retained when another Set-Cookie follows');
+    expect(!str_contains(json_encode($public, JSON_THROW_ON_ERROR), 'fixture-'), 'report excludes cookie values and response body');
+    expect(count($GLOBALS['nxmt_http_calls']) === 1 && $GLOBALS['nxmt_http_calls'][0]->url === $siteUrl
+        && !str_contains(json_encode($GLOBALS['nxmt_http_calls'][0]->options, JSON_PARTIAL_OUTPUT_ON_ERROR), 'fixture-admin-'),
+        'public header check fetches only this site and never sends credentials');
+    expect($public['supplement']['cors']['state'] === 'unknown', 'ordinary public GET cannot determine origin-specific CORS rules');
+    $headersOnly = SecurityHeaders::evaluate(array_intersect_key($headerBag, array_flip(['strict-transport-security', 'content-security-policy'])), true, session_name());
+    expect($headersOnly['score'] === 75 && $headersOnly['rows']['frame']['points'] === 20, 'CSP frame-ancestors earns embedding points without an XFO field');
+    $limited = SecurityHeaders::evaluate([
+        'strict-transport-security'=>['max-age=0'], 'content-security-policy-report-only'=>["default-src 'self'"],
+        'x-frame-options'=>['SAMEORIGIN'], 'x-content-type-options'=>['nosniff'], 'permissions-policy'=>['camera=*'],
+    ], true, session_name());
+    expect($limited['score'] === 30 && $limited['rows']['hsts']['points'] === 0 && $limited['rows']['csp']['points'] === 0,
+        'disabled HSTS and report-only CSP earn no points');
+    expect(SecurityHeaders::evaluate([], true, session_name())['score'] === 0, 'response with no applicable headers scores zero');
+    expect(SecurityHeaders::evaluate(['strict-transport-security'=>['unrecognized']], true, session_name())['score'] === null, 'unresolved header prevents a misleading total');
+    $GLOBALS['nxmt_http_responses'] = [['status' => 503, 'headers' => ['Content-Type' => 'text/html']]];
+    expect(SecurityHeaders::inspect($siteUrl, true)['score'] === null, 'server error response remains unscored');
     echo "HTTP and URL-discovery checks: $checks passed\n";
 }

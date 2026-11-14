@@ -13,7 +13,11 @@ use NxMultiTool\Inspector;
 $checks = 0;
 function check(bool $condition, string $message): void { global $checks; $checks++; if (!$condition) { throw new RuntimeException($message); } }
 function rejects(callable $callback, string $message): void { try { $callback(); } catch (Throwable $e) { check(true, $message); return; } check(false, $message); }
-$_SESSION = ['user' => ['id' => 1, 'role' => 'administrator']];
+$adminSession = [
+    'user' => ['id' => 1, 'role' => 'administrator'],
+    'auth_fingerprint' => hash('sha256', BASE_PATH . "\0" . \app\Models\User::passwordHash(1)),
+];
+$_SESSION = $adminSession;
 $_SERVER['REMOTE_ADDR'] = '192.0.2.50'; $_SERVER['REQUEST_METHOD'] = 'GET';
 check(count(NxMultiTool\Registry::all()) === 13, '13 tools');
 $settings=Settings::all();check(count(array_filter($settings['tools']))===13,'all enabled');check($settings['comments_open']===false,'public comments opt in');
@@ -51,11 +55,18 @@ rejects(fn()=>Comments::confirmBlock($token),'review token single use');Monitor:
 Comments::act('delete',[$id]);check(Comments::list([])['total']===1,'only trash permanently deleted');Comments::act('trash',[$id]);Comments::act('delete',[$id]);check(Comments::list([])['total']===0,'trash deletion');
 $_SESSION=[];http_response_code(200);$_SERVER['HTTP_REFERER']='https://example.test/a?secret=hidden';$_SERVER['HTTP_USER_AGENT']='fixture';
 Monitor::record('/post/hello');check(Monitor::logs([])['total']===1,'access logging');check(Monitor::logs([])['rows'][0]['referrer']==='/a','referrer sanitized');
-check(count(NxMultiTool\Security::inspect()['items'])===10,'10 security checks');
+$security = \NxMultiTool\Security::inspect();
+check(array_column($security['items'], 'area') === ['both', 'cms', 'cms', 'both', 'server', 'cms', 'both', 'both', 'versions', 'cms', 'both', 'both', 'cms', 'server', 'server', 'both', 'cms', 'cms', 'both', 'server'], '20 security categories with approved confirmation sources');
+check($security['items'][2]['rows'][0]['state'] === 'present' && $security['items'][12]['rows'][0]['state'] === 'present', 'checks find scoped evidence in the installed CMS and extension');
+check($security['items'][4]['rows'][0]['state'] === 'unknown' && array_column($security['items'][8]['rows'], 'state') === ['present', 'unknown'], 'unavailable server rules and vulnerability matches stay unconfirmed');
+$security = \NxMultiTool\Security::inspect([]);
+foreach ($security['items'] as $item) {
+    check(array_unique(array_column($item['rows'], 'state')) === ['unknown'], 'excluded sources are unconfirmed for group ' . $item['number']);
+}
 Settings::save(['tools'=>['qr']]);check(!Settings::enabled('password')&&Settings::enabled('qr'),'per-tool disable state');
 // Reset fixture data for browser tests, preserving extension-owned tables.
 Database::query('DELETE FROM '.Database::table('logs'));Settings::save($settingsInput);
-$_SESSION=['user'=>['id'=>1,'role'=>'administrator']];
+$_SESSION = $adminSession;
 Storage::transaction('settings', static fn($saved) => [array_replace($saved, ['site_url'=>'https://old.example.test']), null]);
 $_SERVER['HTTP_HOST'] = 'current.example.test';
 $_SERVER['HTTPS'] = 'on';

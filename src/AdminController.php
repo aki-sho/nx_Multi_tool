@@ -40,6 +40,24 @@ final class AdminController
             if ($tool === 'password') { Access::json(['ok' => true, 'data' => Utility::passwords($_POST)]); return; }
             if ($tool === 'bcrypt') { Access::json(['ok' => true, 'data' => Utility::bcrypt($_POST)]); return; }
             if ($tool === 'link_inspector') { Access::json(['ok' => true, 'data' => Inspector::scan($_POST, Access::integer($_POST, 'offset', 0, 1000000, 0))]); return; }
+            if ($tool === 'security_check' && $op === 'inspect') {
+                $selected = $_POST['sources'] ?? [];
+                if (!is_array($selected)) { throw new \InvalidArgumentException('読み取り元を確認してください。'); }
+                $sources = [];
+                foreach (Security::SOURCES as $source => $label) {
+                    $sources[$source] = in_array($source, $selected, true);
+                }
+                $data = Security::inspect($sources);
+                ob_start();
+                try {
+                    require dirname(__DIR__) . '/views/partials/security-results.php';
+                    $html = (string)ob_get_contents();
+                } finally {
+                    ob_end_clean();
+                }
+                Access::json(['ok' => true, 'data' => ['html' => $html]]);
+                return;
+            }
             if ($tool === 'site_urls') {
                 $run = Access::text($_POST, 'run', 32);
                 if ($op === 'start') { $result = Crawler::start(); }

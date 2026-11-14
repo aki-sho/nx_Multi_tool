@@ -3,11 +3,17 @@
 $testSessions = getenv('NXMT_TEST_SESSIONS') ?: __DIR__ . '/.runtime/sessions';
 if (!is_dir($testSessions)) { mkdir($testSessions, 0700, true); }
 session_save_path($testSessions);
-session_start(); require __DIR__ . '/fixture.php';
+require __DIR__ . '/fixture.php';
+if (is_callable([\app\Core\Auth::class, 'startSession'])) { \app\Core\Auth::startSession(); }
+else { session_start(); }
 $path = (string)parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 if ($path === '/fixture/login') {
     $id = ($_GET['role'] ?? '') === 'editor' ? 2 : 1;
-    \app\Core\Auth::login(\app\Models\User::find($id)); header('Location: /admin/extensions/nx_Multi_tool/dashboard'); return;
+    $user = \app\Models\User::find($id);
+    $user['password_hash'] = \app\Models\User::passwordHash($id);
+    \app\Core\Auth::login($user);
+    header('Location: /admin/extensions/nx_Multi_tool/dashboard');
+    return;
 }
 if ($path === '/fixture/logout') { \app\Core\Auth::logout(); echo 'logged out'; return; }
 if (str_starts_with($path, '/public/')) {
@@ -24,5 +30,6 @@ $router->get('/admin/posts/create', \app\Controllers\Admin\PostController::class
 $router->get('/admin/pages/edit/{id}', \app\Controllers\Admin\PageController::class . '@edit');
 $router->get('/post/{slug}', \app\Controllers\PostController::class . '@show');
 $router->get('/page/{slug}', \app\Controllers\PageController::class . '@show');
-\app\Core\Extension::bootEnabled($router);
+$guardRequired = \app\Models\ExtensionSetting::isEnabled('access-guard');
+\app\Core\Extension::bootEnabled($router, $guardRequired);
 $router->dispatch();
