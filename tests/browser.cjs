@@ -58,7 +58,13 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
       return key.textContent.includes('重要度（高・中・低）')
         && key.getBoundingClientRect().left > title.getBoundingClientRect().right
         && rows.length === 13 && levels.size === 3
-        && rows.every(row => row.querySelector('[data-header-impact] p').textContent.trim().length > 0);
+        && rows.every(row => {
+          const impact = row.querySelector('[data-header-impact] p');
+          const mitigation = impact?.nextElementSibling;
+          return impact?.textContent.trim().length > 0
+            && mitigation?.matches('p[data-header-mitigation]')
+            && mitigation.textContent.trim().startsWith('※改善方法 ');
+        });
     })()`), 'importance legend and explanations cover every public response row');
     check((await api('security_check', {op:'inspect'}, false)).status === 419, 'rechecking requires CSRF');
     await evaluate(`document.querySelector('[data-security-form] button').click()`);
@@ -71,8 +77,9 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
       const badges = csp.querySelector('.nxmt-security-header-badges');
       return csp.querySelector('[data-importance="high"]').textContent.trim() === '重要度 高'
         && csp.querySelector('[data-header-impact]').textContent.includes('フォームが動かなくなる')
+        && csp.querySelector('[data-header-mitigation]').textContent.includes('報告モード')
         && badges.getBoundingClientRect().right > csp.querySelector('code').getBoundingClientRect().right;
-    })()`), 'rechecking retains priority and configuration impact');
+    })()`), 'rechecking retains priority, impact and mitigation');
     await evaluate(`document.querySelector('.nxmt-security-header summary').click();
       document.querySelector('[data-security-jump="15"]').click()`);
     check(await evaluate(`!document.querySelector('[data-security-panel="categories"]').hidden

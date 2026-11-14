@@ -171,6 +171,7 @@
     background: #fbf6eb;
 }
 .nxmt-security-results .nxmt-security-impact p { margin: 3px 0 0; }
+.nxmt-security-results .nxmt-security-impact p + p { margin-top: 8px; }
 .nxmt-security-header-settings {
     border-left: 3px solid var(--nxmt-border);
     margin-top: 9px;

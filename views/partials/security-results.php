@@ -35,6 +35,7 @@ $headerRow = static function (array $row, string $id) use ($badge, $importanceBa
             <div class="nxmt-security-impact" data-header-impact>
                 <strong>設定したときの影響</strong>
                 <p><?= e($guide['impact']) ?></p>
+                <p data-header-mitigation><strong>※改善方法</strong> <?= e($guide['mitigation'] ?? 'ありません。') ?></p>
             </div>
             <?php if (isset($row['category'])): ?>
                 <button type="button" class="secondary" data-security-jump="<?= (int)$row['category'] ?>"><?= (int)$row['category'] ?>番の分類を見る</button>
