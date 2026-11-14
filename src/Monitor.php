@@ -3,6 +3,11 @@ namespace NxMultiTool;
 
 final class Monitor
 {
+    public const DEFAULT_PER_PAGE = 50;
+    public const MAX_PER_PAGE = 100;
+    public const MEMO_LIMIT = 500;
+    public const SUMMARY_DAYS = 30;
+
     public static function normalizeIp(string $ip): string
     {
         if (!filter_var($ip, FILTER_VALIDATE_IP)) { return ''; }
@@ -80,11 +85,18 @@ final class Monitor
         $cut = Database::query('SELECT id FROM ' . Database::table('logs') . ' ORDER BY id DESC LIMIT 1 OFFSET ' . (int)$settings['log_max'])->fetchColumn();
         if ($cut !== false) { Database::query('DELETE FROM ' . Database::table('logs') . ' WHERE id <= ?', [(int)$cut]); }
     }
-    public static function logs(array $input, int $limit = 50, int $offset = 0): array
+    public static function logs(array $input, int $limit = self::DEFAULT_PER_PAGE, int $offset = 0): array
     {
         $where = ' WHERE 1=1'; $params = [];
         $q = trim(Access::text($input, 'q', 300));
-        if ($q !== '') { $where .= " AND (url LIKE ? ESCAPE '=' OR referrer LIKE ? ESCAPE '=' OR ua LIKE ? ESCAPE '=')"; $value = '%' . strtr($q, ['=' => '==', '%' => '=%', '_' => '=_']) . '%'; array_push($params, $value, $value, $value); }
+        if ($q !== '') {
+            $escape = ['=' => '==', '%' => '=%', '_' => '=_'];
+            $value = '%' . strtr($q, $escape) . '%';
+            $ip = self::normalizeIp($q);
+            $ipMatch = $ip === '' ? "ip LIKE ? ESCAPE '='" : 'ip = ?';
+            $where .= " AND (url LIKE ? ESCAPE '=' OR referrer LIKE ? ESCAPE '=' OR ua LIKE ? ESCAPE '=' OR $ipMatch)";
+            array_push($params, $value, $value, $value, $ip === '' ? $value : $ip);
+        }
         if (!empty($input['ip'])) { $where .= ' AND ip = ?'; $params[] = self::normalizeIp(Access::text($input, 'ip', 45)); }
         foreach (['from' => '>=', 'to' => '<'] as $key => $operator) {
             $value = Access::text($input, $key, 10);
@@ -97,5 +109,72 @@ final class Monitor
         $total = (int)Database::query('SELECT COUNT(*) FROM ' . Database::table('logs') . $where, $params)->fetchColumn();
         $rows = Database::query('SELECT * FROM ' . Database::table('logs') . $where . ' ORDER BY id DESC LIMIT ' . max(1, min(1000, $limit)) . ' OFFSET ' . max(0, $offset), $params)->fetchAll();
         return ['rows' => $rows, 'total' => $total];
+    }
+
+    public static function ipSummary(int $page): array
+    {
+        $table = Database::table('logs');
+        $now = time();
+        $range = [$now - self::SUMMARY_DAYS * 86400, $now];
+        $total = (int)Database::query("SELECT COUNT(DISTINCT ip) FROM $table WHERE created_at BETWEEN ? AND ? AND ip <> ''", $range)->fetchColumn();
+        $limit = self::DEFAULT_PER_PAGE;
+        $page = max(1, min($page, (int)ceil($total / $limit)));
+        $offset = ($page - 1) * $limit;
+        $dates = [];
+        if ($total > 0) {
+            $stmt = Database::query(
+                "SELECT logs.ip, logs.created_at FROM (
+                    SELECT ip, COUNT(*) AS visits, MAX(created_at) AS latest
+                    FROM $table WHERE created_at BETWEEN ? AND ? AND ip <> '' GROUP BY ip
+                    ORDER BY visits DESC, latest DESC, ip ASC
+                    LIMIT $limit OFFSET $offset
+                ) AS ranked JOIN $table AS logs ON logs.ip = ranked.ip AND logs.created_at BETWEEN ? AND ?
+                ORDER BY ranked.visits DESC, ranked.latest DESC, ranked.ip ASC, logs.created_at DESC, logs.id DESC",
+                array_merge($range, $range)
+            );
+            while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+                $dates[$row['ip']][] = (int)$row['created_at'];
+            }
+        }
+        return ['dates' => $dates, 'total' => $total, 'page' => $page];
+    }
+
+    public static function memos(array $ips): array
+    {
+        $ips = array_values(array_unique(array_filter($ips)));
+        if (!$ips) { return []; }
+        $placeholders = implode(',', array_fill(0, count($ips), '?'));
+        return Database::query('SELECT ip, memo FROM ' . Database::table('ip_memos') . " WHERE ip IN ($placeholders)", $ips)
+            ->fetchAll(\PDO::FETCH_KEY_PAIR);
+    }
+
+    public static function saveMemo(string $ip, string $memo): string
+    {
+        $ip = self::normalizeIp($ip);
+        if ($ip === '') { throw new \InvalidArgumentException('IPアドレスを確認してください。'); }
+        if (!preg_match('/\A[^\x00-\x1f\x7f]{0,' . self::MEMO_LIMIT . '}\z/u', $memo)) {
+            throw new \InvalidArgumentException('メモは改行なしで' . self::MEMO_LIMIT . '文字以内にしてください。');
+        }
+        $memo = trim($memo);
+        $table = Database::table('ip_memos');
+        if ($memo === '') {
+            Database::query("DELETE FROM $table WHERE ip = ?", [$ip]);
+            return '';
+        }
+        $upsert = Database::connection()->getAttribute(\PDO::ATTR_DRIVER_NAME) === 'mysql'
+            ? 'ON DUPLICATE KEY UPDATE memo = ?' : 'ON CONFLICT (ip) DO UPDATE SET memo = ?';
+        Database::query("INSERT INTO $table (ip, memo) VALUES (?, ?) $upsert", [$ip, $memo, $memo]);
+        return $memo;
+    }
+
+    public static function saveMemoFrom(array $input): string
+    {
+        return self::saveMemo(Access::text($input, 'ip', 45), Access::text($input, 'memo', 4 * self::MEMO_LIMIT));
+    }
+
+    public static function listQuery(array $input): array
+    {
+        $query = array_intersect_key($input, array_fill_keys(['q', 'ip', 'from', 'to', 'per_page', 'page', 'ip_page'], true));
+        return array_filter($query, static fn($value) => is_string($value) && strlen($value) <= 300);
     }
 }

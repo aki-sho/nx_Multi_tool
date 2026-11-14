@@ -33,6 +33,43 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
     check(await evaluate('!document.querySelector("input[name=site_url]") && document.querySelector(".nxmt-site-info").textContent.includes("サイト名") && document.querySelector(".nxmt-site-info a").href === location.origin + "/"'),'dashboard shows CMS site information without a URL input');
     const tools=['site_links','qr','calc','bcrypt','password','timer','link_inspector','access_log','security_check','post_data','site_urls','search_replace','comment_manager'];
     for(const tool of tools){await go('/admin/extensions/nx_Multi_tool/dashboard?tool='+tool);check(await evaluate('!!document.querySelector("[data-nxmt]")&&!document.querySelector(".nxmt-notice.is-error")'),'render '+tool);}
+    const logRoute = '/admin/extensions/nx_Multi_tool/dashboard?tool=access_log';
+    await go(logRoute);
+    check(await evaluate(`(() => {
+      const accessLog = document.querySelector('[data-access-log]');
+      const search = accessLog.querySelector('input[type="search"]');
+      const deleteButton = accessLog.querySelector('[data-log-delete]');
+      return search.placeholder === '検索（URL・参照元・UA・IP）'
+        && !search.form.querySelector('[name=ip]')
+        && search.getBoundingClientRect().left > deleteButton.getBoundingClientRect().right
+        && [...accessLog.querySelectorAll('.nxmt-log-filter label')].every(label =>
+          label.firstElementChild.getBoundingClientRect().right < label.lastElementChild.getBoundingClientRect().left)
+        && Array.from(accessLog.querySelectorAll('[data-log-table] th')).map(th => th.textContent).slice(3).join(',') === 'IP,拒否状態,URL,参照元,UA,メモ';
+    })()`), 'compact access log toolbar and separate columns');
+    await evaluate(`const form = document.querySelector('.nxmt-log-filter');
+      form.elements.q.value = '198.51.100.11'; form.elements.per_page.value = '2'; form.requestSubmit(); void 0`);
+    await waitFor(`document.readyState === 'complete' && new URLSearchParams(location.search).get('per_page') === '2'
+      && document.querySelectorAll('[data-log-table] tbody input[name="memo"]').length === 2`);
+    check(await evaluate(`(() => {
+      const ipRows = [...document.querySelectorAll('[data-log-ip-table] tbody tr')];
+      const row = ipRows.find(item => item.cells[0].textContent === '198.51.100.11');
+      const dates = row.querySelector('textarea');
+      return ipRows.some(item => item.cells[0].textContent === '198.51.100.12')
+        && row.cells[1].textContent === '3回' && dates.readOnly && getComputedStyle(dates).resize === 'vertical'
+        && dates.value.split('\\n').length === 3 && !row.cells[4].querySelector('input, textarea');
+    })()`), '30-day IP summary spans all matching visits and shows the memo read-only');
+    await evaluate(`const memo = document.querySelector('[data-memo-ip]'); memo.elements.memo.value = '確認済み <メモ>'; memo.requestSubmit(); void 0`);
+    await waitFor(`document.querySelector('[data-ip-memo="198.51.100.11"]').textContent === '確認済み <メモ>'`);
+    check(await evaluate(`[...document.querySelectorAll('[data-log-table] input[name="memo"]')].every(input => input.value === '確認済み <メモ>')`),
+      'saving one memo updates the entries for the same IP');
+    await go(logRoute + '&q=198.51.100.11&per_page=2&page=2');
+    check(await evaluate(`document.querySelectorAll('[data-log-table] input[name="memo"]').length === 1
+      && document.querySelector('[data-log-table] input[name="memo"]').value === '確認済み <メモ>'
+      && document.querySelector('[data-access-log] .nxmt-pagination').textContent.includes('2 / 2')`), 'page size and memo persist on the next page');
+    check((await api('access_log', {op:'save_ip_memo', ip:'198.51.100.11', memo:'未保存'}, false)).status === 419, 'memo changes require CSRF');
+    await evaluate(`const form = document.querySelector('[data-memo-ip]'); form.elements.memo.value = ''; form.requestSubmit(); void 0`);
+    await waitFor(`document.querySelector('[data-ip-memo="198.51.100.11"]').textContent === '—'`);
+    check(await evaluate(`new URLSearchParams(location.search).get('page') === '2'`), 'clearing memo leaves current view intact');
     await go('/admin/extensions/nx_Multi_tool/dashboard?tool=security_check');
     check(await evaluate(`Array.from(document.querySelectorAll('.nxmt-security-sources input')).every(box =>
       box.getBoundingClientRect().width <= 24 && box.nextElementSibling.getBoundingClientRect().left - box.getBoundingClientRect().right <= 12)

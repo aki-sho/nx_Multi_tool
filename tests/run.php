@@ -55,6 +55,36 @@ rejects(fn()=>Comments::confirmBlock($token),'review token single use');Monitor:
 Comments::act('delete',[$id]);check(Comments::list([])['total']===1,'only trash permanently deleted');Comments::act('trash',[$id]);Comments::act('delete',[$id]);check(Comments::list([])['total']===0,'trash deletion');
 $_SESSION=[];http_response_code(200);$_SERVER['HTTP_REFERER']='https://example.test/a?secret=hidden';$_SERVER['HTTP_USER_AGENT']='fixture';
 Monitor::record('/post/hello');check(Monitor::logs([])['total']===1,'access logging');check(Monitor::logs([])['rows'][0]['referrer']==='/a','referrer sanitized');
+$now = time();
+$ip = '192.0.2.50';
+$insertLog = static function ($when, $address): void {
+    Database::query('INSERT INTO ' . Database::table('logs') . ' (created_at,method,status,ip,url,referrer,ua) VALUES (?,?,?,?,?,?,?)',
+        [$when, 'GET', 404, $address, '/fixture-log/', '/referrer', 'Test Browser']);
+};
+$insertLog($now - 90, $ip);
+$insertLog($now - 31 * 86400, $ip);
+$insertLog($now - 70, '192.0.2.51');
+$insertLog($now - 70, '');
+$searchPage = Monitor::logs(['q' => '192.0.2.'], 1, 1);
+check($searchPage['total'] === 4 && count($searchPage['rows']) === 1
+    && Monitor::logs(['q' => '::ffff:192.0.2.50'])['total'] === 3
+    && Monitor::logs(['ip' => $ip])['total'] === 3, 'unified search matches IP and preserves exact legacy links');
+$summary = Monitor::ipSummary(1);
+check($summary['total'] === 2 && count($summary['dates'][$ip]) === 2
+    && $summary['dates'][$ip][1] === $now - 90, '30-day IP counts include every retained timestamp in descending order');
+for ($index = 1; $index <= 50; $index++) {
+    $insertLog($now - 120, '198.51.100.' . $index);
+}
+$nextIps = Monitor::ipSummary(2);
+check($nextIps['total'] === 52 && count($nextIps['dates']) === 2, 'IP summary pages independently');
+check(Monitor::saveMemo($ip, ' 訪問確認 ') === '訪問確認' && Monitor::memos([$ip])[$ip] === '訪問確認',
+    'memo is stored for the IP');
+Monitor::saveMemo('::ffff:' . $ip, '更新');
+check(Monitor::memos([$ip]) === [$ip => '更新'], 'memo update uses the normalized address');
+rejects(fn() => Monitor::saveMemo($ip, str_repeat('文', Monitor::MEMO_LIMIT + 1)), 'overlong memo rejected');
+Monitor::saveMemo($ip, '');
+check(Monitor::memos([$ip]) === [], 'blank memo clears a previous note');
+Database::query('DELETE FROM ' . Database::table('logs'));
 $security = \NxMultiTool\Security::inspect();
 check(array_column($security['items'], 'area') === ['both', 'cms', 'cms', 'both', 'server', 'cms', 'both', 'both', 'versions', 'cms', 'both', 'both', 'cms', 'server', 'server', 'both', 'cms', 'cms', 'both', 'server'], '20 security categories with approved confirmation sources');
 check($security['items'][2]['rows'][0]['state'] === 'present' && $security['items'][12]['rows'][0]['state'] === 'present', 'checks find scoped evidence in the installed CMS and extension');
@@ -86,7 +116,10 @@ check(array_keys(\NxMultiTool\PublicHeaders::settings()) === ['permissions'], 'r
 \NxMultiTool\PublicHeaders::set('permissions', null);
 Settings::save(['tools'=>['qr']]);check(!Settings::enabled('password')&&Settings::enabled('qr'),'per-tool disable state');
 // Reset fixture data for browser tests, preserving extension-owned tables.
-Database::query('DELETE FROM '.Database::table('logs'));Settings::save($settingsInput);
+Settings::save($settingsInput);
+foreach (['198.51.100.11', '198.51.100.11', '198.51.100.11', '198.51.100.12'] as $index => $address) {
+    $insertLog(time() - $index * 60, $address);
+}
 $_SESSION = $adminSession;
 Storage::transaction('settings', static fn($saved) => [array_replace($saved, ['site_url'=>'https://old.example.test']), null]);
 $_SERVER['HTTP_HOST'] = 'current.example.test';

@@ -16,7 +16,7 @@ final class Database
         $identity = $mysql ? (string)$pdo->query('SELECT DATABASE()')->fetchColumn() : 'sqlite';
         $key = hash('sha256', $identity . self::table('logs'));
         $schema = Storage::read('schema');
-        if (($schema['key'] ?? '') !== $key || ($schema['version'] ?? 0) !== 1) {
+        if (($schema['key'] ?? '') !== $key || ($schema['version'] ?? 0) !== 2) {
             $id = $mysql ? 'BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT';
             $suffix = $mysql ? ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4' : '';
             $pdo->exec('CREATE TABLE IF NOT EXISTS ' . self::table('logs') . " (
@@ -29,13 +29,16 @@ final class Database
                 name VARCHAR(120) NOT NULL, email VARCHAR(254) NOT NULL, body TEXT NOT NULL,
                 ip VARCHAR(45) NOT NULL, status VARCHAR(12) NOT NULL, created_at BIGINT NOT NULL
                 " . ($mysql ? ', INDEX nxmt_comment_content(content_type, content_id, status), INDEX nxmt_comment_ip(ip, created_at)' : '') . ")$suffix");
+            $pdo->exec('CREATE TABLE IF NOT EXISTS ' . self::table('ip_memos') . " (
+                ip VARCHAR(45) NOT NULL PRIMARY KEY, memo TEXT NOT NULL
+                )$suffix");
             if (!$mysql) {
                 $pdo->exec('CREATE INDEX IF NOT EXISTS nxmt_log_time ON ' . self::table('logs') . '(created_at)');
                 $pdo->exec('CREATE INDEX IF NOT EXISTS nxmt_log_ip ON ' . self::table('logs') . '(ip, created_at)');
                 $pdo->exec('CREATE INDEX IF NOT EXISTS nxmt_comment_content ON ' . self::table('comments') . '(content_type, content_id, status)');
                 $pdo->exec('CREATE INDEX IF NOT EXISTS nxmt_comment_ip ON ' . self::table('comments') . '(ip, created_at)');
             }
-            Storage::transaction('schema', static fn($old) => [['key' => $key, 'version' => 1], null]);
+            Storage::transaction('schema', static fn($old) => [['key' => $key, 'version' => 2], null]);
         }
         self::$ready = true;
     }

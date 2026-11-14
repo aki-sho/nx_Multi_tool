@@ -13,6 +13,52 @@
   root.querySelectorAll('[data-confirm]').forEach(button => button.addEventListener('click', event => {
     if (!confirm(button.dataset.confirm)) event.preventDefault();
   }));
+  const accessLog = root.querySelector('[data-access-log]');
+  if (accessLog) {
+    const logTable = accessLog.querySelector('[data-log-table]');
+    const deleteButton = accessLog.querySelector('[data-log-delete]');
+    function updateLogSelection() {
+      deleteButton.disabled = !logTable.querySelector('input[type="checkbox"]:checked');
+    }
+    updateLogSelection();
+    logTable.addEventListener('change', updateLogSelection);
+    logTable.addEventListener('submit', async event => {
+      const form = event.target;
+      if (!form.matches('[data-memo-ip]')) return;
+      event.preventDefault();
+      const ip = form.dataset.memoIp;
+      const editors = [...logTable.querySelectorAll('[data-memo-ip]')].filter(editor => editor.dataset.memoIp === ip);
+      const button = form.querySelector('button[type="submit"]');
+      if (button.disabled) return;
+      const payload = new FormData(form);
+      const status = form.querySelector('[data-memo-status]');
+      const controls = editors.flatMap(editor => [editor.elements.memo, editor.querySelector('button[type="submit"]')]);
+      controls.forEach(control => { control.disabled = true; });
+      status.hidden = false;
+      status.classList.remove('is-error');
+      status.textContent = '保存中…';
+      try {
+        const saved = await api('access_log', payload);
+        for (const editor of editors) {
+          editor.elements.memo.value = saved.memo;
+          if (editor !== form) editor.querySelector('[data-memo-status]').hidden = true;
+        }
+        const summary = [...accessLog.querySelectorAll('[data-ip-memo]')].find(cell => cell.dataset.ipMemo === ip);
+        if (summary) summary.textContent = saved.memo || '—';
+        status.textContent = '保存済み';
+      } catch (error) {
+        status.textContent = error.message;
+        status.classList.add('is-error');
+      } finally {
+        controls.forEach(control => { control.disabled = false; });
+      }
+    });
+    logTable.addEventListener('input', event => {
+      if (event.target.matches('[data-memo-ip] input[name="memo"]')) {
+        event.target.form.querySelector('[data-memo-status]').hidden = true;
+      }
+    });
+  }
   root.querySelectorAll('[data-nxmt-api]').forEach(form => {
     form.addEventListener('submit', async event => {
       event.preventDefault(); const button = form.querySelector('[type=submit]'), status = form.querySelector('[data-api-status]'), output = form.querySelector('[data-api-output]');
