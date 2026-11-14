@@ -47,9 +47,7 @@ $httpsOnly = $id === 'hsts' && parse_url($public['url'], PHP_URL_SCHEME) !== 'ht
             <?php endif; ?>
             <pre data-header-preview data-header-name="<?= e(PublicHeaders::NAMES[$id]) ?>"><?= e(PublicHeaders::name($id, $mode) . ': ' . $value) ?></pre>
             <?php if ($id === 'hsts'): ?>
-                <p class="nxmt-muted">公開トップから送信し、ブラウザーはこのホストのHTTPSを5分間優先します。解除した後も、受信済みの有効期間は残ります。</p>
-            <?php elseif ($id === 'frame'): ?>
-                <p class="nxmt-muted">SAMEORIGINは同一オリジンからの埋め込みを許可します。DENYはすべての埋め込みを制限します。</p>
+                <p class="nxmt-muted">このホストへの接続にHTTPSを使用するよう、ブラウザーに指示します。</p>
             <?php endif; ?>
             <button type="submit" name="op" value="apply_header" <?= $httpsOnly ? 'disabled' : '' ?>><?= $saved === null ? 'この項目を適用' : 'この項目を更新' ?></button>
         </fieldset>

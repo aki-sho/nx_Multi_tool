@@ -127,10 +127,50 @@
 .nxmt-security-results small { display: block; color: #53696b; overflow-wrap: anywhere; }
 .nxmt-security-group-body { margin: 0 4px 10px; }
 .nxmt-security-check-row .nxmt-security-badge { justify-self: end; white-space: nowrap; }
-.nxmt-security-header summary > span:first-of-type { display: inline-block; max-width: 100%; margin-right: 8px; vertical-align: top; }
-.nxmt-security-header summary .nxmt-security-badge { float: right; }
-.nxmt-security-header summary::after { content: ""; display: block; clear: both; }
+.nxmt-security-panel-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    margin-bottom: 10px;
+}
+.nxmt .nxmt-security-panel-heading h2 { margin: 0; }
+.nxmt-security-importance-key { text-align: right; font-weight: 600; }
+.nxmt-security-importance-key small { font-weight: 400; }
+.nxmt-security-header > summary { display: flex; align-items: baseline; }
+.nxmt-security-header > summary::before { content: "▸"; flex: none; margin-right: 7px; }
+.nxmt-security-header[open] > summary::before { content: "▾"; }
+.nxmt-security-header > summary::-webkit-details-marker { display: none; }
+.nxmt-security-header-summary {
+    flex: 1;
+    min-inline-size: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 6px 12px;
+}
+.nxmt-security-header-summary > span:first-child { min-inline-size: 0; }
+.nxmt-security-header-badges {
+    flex: none;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.nxmt-security-importance { white-space: nowrap; }
+.nxmt-security-importance[data-importance="high"] { color: #8a2c36; background: #fae9eb; }
+.nxmt-security-importance[data-importance="medium"] { color: #734a15; background: #fff2d9; }
+.nxmt-security-importance[data-importance="low"] { color: #375968; background: #eaf2f5; }
 .nxmt-security-header-detail { padding: 1px 10px 10px; }
+.nxmt-security-impact {
+    margin: 8px 0 12px;
+    padding: 8px 10px;
+    border-left: 3px solid #bf965c;
+    background: #fbf6eb;
+}
+.nxmt-security-results .nxmt-security-impact p { margin: 3px 0 0; }
 .nxmt-security-header-settings {
     border-left: 3px solid var(--nxmt-border);
     margin-top: 9px;
@@ -160,4 +200,6 @@
 @media (max-width: 520px) {
     .nxmt .nxmt-security-results { padding: 12px; }
     .nxmt-security-group > summary .nxmt-security-counts { display: flex; margin: 3px 0 0 16px; }
+    .nxmt-security-importance-key { margin-left: auto; }
+    .nxmt-security-header-summary { flex-direction: column; align-items: stretch; }
 }

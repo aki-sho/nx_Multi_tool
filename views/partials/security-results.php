@@ -12,32 +12,37 @@ $scope = [
 $badge = static function (string $state): void { ?>
     <span class="nxmt-security-badge" data-state="<?= e($state) ?>"><?= e(Security::STATES[$state]) ?></span>
 <?php };
-$supplementGuides = [
-    'cookie' => 'セッションCookieの属性は、NexaPress本体の app/Core/Auth.php のセッション開始処理と、PHPのセッション設定で確認できます。',
-    'cache' => '対象ページのコントローラー、または配信サーバーのキャッシュ設定を確認します。ログイン中や個人情報を含む応答は、公開キャッシュの対象から外します。',
-    'cors' => '外部からの読み取りを許可するAPI単位で設定します。対象の処理や配信サーバーで、必要なオリジンを指定してください。',
-    'server' => 'ServerはWebサーバーやCDN、X-Powered-ByはPHPの expose_php など、配信環境の設定で確認できます。',
-];
-$referenceGuides = [
-    'Cross-Origin-Embedder-Policy' => '外部の画像やスクリプトの読み込みを確認したうえで、対象ページの応答に設定します。',
-    'Cross-Origin-Opener-Policy' => 'ログインや決済などのポップアップの連携を確認したうえで、対象ページの応答に設定します。',
-    'Cross-Origin-Resource-Policy' => '埋め込み元を制限する場合は、画像やファイルなど、対象のリソース自体の応答に設定します。',
-];
-$headerRow = static function (array $row, string $id, ?string $guide = null) use ($badge, $data, $public): void { ?>
-    <details class="nxmt-security-header" data-security-header="<?= e($id) ?>" data-security-row="<?= e($row['state']) ?>">
+$guidance = require dirname(__DIR__, 2) . '/config/header-guidance.php';
+$levels = ['high' => '高', 'medium' => '中', 'low' => '低'];
+$importanceBadge = static function (string $level) use ($levels): void { ?>
+    <span class="nxmt-security-badge nxmt-security-importance" data-importance="<?= e($level) ?>">重要度 <?= e($levels[$level]) ?></span>
+<?php };
+$headerRow = static function (array $row, string $id) use ($badge, $importanceBadge, $guidance, $data, $public): void {
+    $guide = $guidance[$id];
+    ?>
+    <details class="nxmt-security-header" data-security-header="<?= e($id) ?>"<?php if (isset($row['state'])): ?> data-security-row="<?= e($row['state']) ?>"<?php endif; ?>>
         <summary>
-            <span><code><?= e($row['name']) ?></code><small><?= e($row['purpose']) ?></small></span>
-            <?php $badge($row['state']); ?>
+            <span class="nxmt-security-header-summary">
+                <span><code><?= e($row['name']) ?></code><small><?= e($row['purpose']) ?></small></span>
+                <span class="nxmt-security-header-badges">
+                    <?php if (isset($row['state'])) { $badge($row['state']); } ?>
+                    <?php $importanceBadge($guide['importance']); ?>
+                </span>
+            </span>
         </summary>
         <div class="nxmt-security-header-detail">
             <p><?= e($row['detail']) ?></p>
-            <?php if ($row['category'] !== null): ?>
+            <div class="nxmt-security-impact" data-header-impact>
+                <strong>設定したときの影響</strong>
+                <p><?= e($guide['impact']) ?></p>
+            </div>
+            <?php if (isset($row['category'])): ?>
                 <button type="button" class="secondary" data-security-jump="<?= (int)$row['category'] ?>"><?= (int)$row['category'] ?>番の分類を見る</button>
             <?php endif; ?>
-            <?php if ($guide === null): ?>
-                <?php require __DIR__ . '/public-header-settings.php'; ?>
+            <?php if (isset($guide['where'])): ?>
+                <details class="nxmt-security-header-settings"><summary>設定先を見る</summary><p><?= e($guide['where']) ?></p></details>
             <?php else: ?>
-                <details class="nxmt-security-header-settings"><summary>設定先を見る</summary><p><?= e($guide) ?></p></details>
+                <?php require __DIR__ . '/public-header-settings.php'; ?>
             <?php endif; ?>
         </div>
     </details>
@@ -104,7 +109,13 @@ $headerRow = static function (array $row, string $id, ?string $guide = null) use
     <?php endif; ?>
 </section>
 <section class="nxmt-panel nxmt-security-results" id="nxmt-security-headers" data-security-panel="headers" aria-label="公開ヘッダー" hidden>
-    <h2>公開トップの応答</h2>
+    <div class="nxmt-security-panel-heading">
+        <h2>公開トップの応答</h2>
+        <div class="nxmt-security-importance-key" data-importance-key>
+            <span>重要度（高・中・低）</span>
+            <small>一般的な公開サイトで確認する優先度です。</small>
+        </div>
+    </div>
     <div class="nxmt-security-meta">
         <?php if ($public['url'] !== ''): ?><code><?= e($public['url']) ?></code><?php endif; ?>
         <?php if ($public['http'] !== null): ?><span class="nxmt-security-badge">HTTP <?= (int)$public['http'] ?></span><?php endif; ?>
@@ -130,17 +141,10 @@ $headerRow = static function (array $row, string $id, ?string $guide = null) use
     <p class="nxmt-muted" data-security-empty hidden>該当する主要ヘッダーはありません。</p>
     <details class="nxmt-security-supplement" data-security-supplement>
         <summary>応答の補足</summary>
-        <?php foreach ($public['supplement'] as $id => $row) { $headerRow($row, $id, $supplementGuides[$id]); } ?>
+        <?php foreach ($public['supplement'] as $id => $row) { $headerRow($row, $id); } ?>
     </details>
     <details class="nxmt-security-supplement" data-security-unfiltered data-security-references>
         <summary>参考ヘッダー</summary>
-        <?php foreach ($public['references'] as $row): ?>
-            <div class="nxmt-security-check-row">
-                <div>
-                    <strong><code><?= e($row['name']) ?></code></strong><small><?= e($row['purpose']) ?></small><p><?= e($row['detail']) ?></p>
-                    <details class="nxmt-security-header-settings"><summary>設定先を見る</summary><p><?= e($referenceGuides[$row['name']]) ?></p></details>
-                </div>
-            </div>
-        <?php endforeach; ?>
+        <?php foreach ($public['references'] as $row) { $headerRow($row, $row['name']); } ?>
     </details>
 </section>

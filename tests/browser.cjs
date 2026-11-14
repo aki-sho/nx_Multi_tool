@@ -50,12 +50,29 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
       && document.querySelector('[data-security-score]').textContent === '未採点'
       && document.querySelector('.nxmt-security-breakdown').open
       && document.querySelectorAll('.nxmt-security-breakdown dd').length === 6`), 'header tab and point breakdown');
+    check(await evaluate(`(() => {
+      const key = document.querySelector('[data-importance-key]');
+      const title = key.parentElement.querySelector('h2');
+      const rows = Array.from(document.querySelectorAll('[data-security-header]'));
+      const levels = new Set(rows.map(row => row.querySelector('[data-importance]').dataset.importance));
+      return key.textContent.includes('重要度（高・中・低）')
+        && key.getBoundingClientRect().left > title.getBoundingClientRect().right
+        && rows.length === 13 && levels.size === 3
+        && rows.every(row => row.querySelector('[data-header-impact] p').textContent.trim().length > 0);
+    })()`), 'importance legend and explanations cover every public response row');
     check((await api('security_check', {op:'inspect'}, false)).status === 419, 'rechecking requires CSRF');
     await evaluate(`document.querySelector('[data-security-form] button').click()`);
     await waitFor(`document.querySelector('[data-security-status]').textContent === '結果を更新しました。'`);
     check(await evaluate(`document.querySelector('[data-security-score]').textContent === '未採点'
       && document.querySelector('.nxmt-security-breakdown').open
       && document.querySelector('[data-security-panel="headers"]').textContent.includes('応答を取得できませんでした')`), 'unreachable fixture public host remains unscored after recheck');
+    check(await evaluate(`(() => {
+      const csp = document.querySelector('[data-security-header="csp"]');
+      const badges = csp.querySelector('.nxmt-security-header-badges');
+      return csp.querySelector('[data-importance="high"]').textContent.trim() === '重要度 高'
+        && csp.querySelector('[data-header-impact]').textContent.includes('フォームが動かなくなる')
+        && badges.getBoundingClientRect().right > csp.querySelector('code').getBoundingClientRect().right;
+    })()`), 'rechecking retains priority and configuration impact');
     await evaluate(`document.querySelector('.nxmt-security-header summary').click();
       document.querySelector('[data-security-jump="15"]').click()`);
     check(await evaluate(`!document.querySelector('[data-security-panel="categories"]').hidden
