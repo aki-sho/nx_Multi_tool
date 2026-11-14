@@ -197,7 +197,7 @@
 .nxmt-security-breakdown dd { margin: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .nxmt-security-breakdown[data-security-breakdown="categories"] dd { text-align: right; }
 
-.nxmt-log-toolbar, .nxmt-log-filter, .nxmt-log-footer {
+.nxmt-log-toolbar, #nxmt-log-bulk, .nxmt-log-filter, .nxmt-log-ip-heading, .nxmt-log-footer {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -219,19 +219,29 @@
 .nxmt .nxmt-log-search::placeholder { color: #62767a; opacity: 1; }
 .nxmt .nxmt-log-filter input[type="date"] { width: 9em; }
 .nxmt .nxmt-log-filter input[type="number"] { width: 4.1em; }
-.nxmt .nxmt-log-toolbar button, .nxmt .nxmt-log-memo button,
-.nxmt .nxmt-log-block button, .nxmt .nxmt-log-footer .button { padding: 5px 9px; white-space: nowrap; }
+.nxmt .nxmt-log-toolbar button, .nxmt .nxmt-log-filter button, .nxmt .nxmt-log-memo button,
+.nxmt .nxmt-log-footer .button { padding: 5px 9px; white-space: nowrap; }
 .nxmt .nxmt-log-note { margin: 6px 0; }
-.nxmt .nxmt-log-table { min-width: 920px; }
+.nxmt .nxmt-log-table { min-width: 960px; }
 .nxmt .nxmt-log-table th:last-child { width: 17%; }
 .nxmt-log-table th:first-child, .nxmt-log-table td:first-child { text-align: center; }
+.nxmt .nxmt-log-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    white-space: nowrap;
+}
+.nxmt .nxmt-log-sort:hover { background: none; text-decoration: underline; }
 .nxmt-log-nowrap { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .nxmt-log-wrap { overflow-wrap: anywhere; }
-.nxmt .nxmt-log-table .nxmt-log-block, .nxmt-log-badge { white-space: nowrap; }
-.nxmt-log-block form, .nxmt-log-block > a { margin-top: 3px; }
-.nxmt-log-block > a { display: inline-block; }
 .nxmt-log-badge {
     display: inline-block;
+    white-space: nowrap;
     border-radius: 5px;
     padding: 2px 7px;
     background: #edf4f1;
@@ -244,6 +254,9 @@
 .nxmt-log-memo [data-memo-status].is-error { color: #8a2c36; }
 .nxmt-log-footer { justify-content: space-between; }
 .nxmt-log-ip-summary { margin-top: 22px; }
+.nxmt .nxmt-log-ip-heading h2 { margin: 0; scroll-margin-top: 12px; }
+.nxmt-log-ip-filter { flex: 0 1 30em; margin-left: auto; }
+.nxmt .nxmt-comment-row:target td { background: #eef9f4; }
 .nxmt .nxmt-log-ip-table { min-width: 620px; }
 .nxmt .nxmt-log-ip-table th:nth-child(2), .nxmt .nxmt-log-ip-table td:nth-child(2) { text-align: right; }
 .nxmt .nxmt-log-ip-table th:nth-child(4) { width: 40%; }

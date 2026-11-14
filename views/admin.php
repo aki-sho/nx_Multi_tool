@@ -28,7 +28,7 @@ $groups = ['content' => 'コンテンツ', 'management' => 'サイト管理', 'u
                 <label>ログ保存上限<input type="number" name="log_max" min="100" max="100000" value="<?= (int)$settings['log_max'] ?>"></label>
                 <label>ログ記録上限／分<input type="number" name="log_per_minute" min="1" max="600" value="<?= (int)$settings['log_per_minute'] ?>"></label>
                 <label>同一IPの記録上限／分<input type="number" name="log_per_ip" min="1" max="60" value="<?= (int)$settings['log_per_ip'] ?>"></label>
-                <label>IP拒否の有効時間<input type="number" name="block_hours" min="1" max="720" value="<?= (int)$settings['block_hours'] ?>"></label>
+                <label>コメント管理のIP拒否時間<input type="number" name="block_hours" min="1" max="720" value="<?= (int)$settings['block_hours'] ?>"></label>
                 <label class="nxmt-wide">許可IP（1行に1件）<textarea name="allow_ips" rows="3"><?= e(implode("\n", $settings['allow_ips'])) ?></textarea></label>
             </div><label class="nxmt-check"><input type="checkbox" name="comments_open" value="1" <?= $settings['comments_open'] ? 'checked' : '' ?>>公開記事・固定ページでコメントを受け付ける（全件承認制）</label><p class="nxmt-muted">初期状態では受付停止。コメント管理ツールが有効な場合に、公開ページへフォームを追加します。</p></section>
             <div class="nxmt-save"><button type="submit">設定を保存</button><span>設定は拡張機能の更新後も保持されます。</span></div>

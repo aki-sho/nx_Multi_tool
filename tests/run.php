@@ -84,6 +84,15 @@ check(Monitor::memos([$ip]) === [$ip => '更新'], 'memo update uses the normali
 rejects(fn() => Monitor::saveMemo($ip, str_repeat('文', Monitor::MEMO_LIMIT + 1)), 'overlong memo rejected');
 Monitor::saveMemo($ip, '');
 check(Monitor::memos([$ip]) === [], 'blank memo clears a previous note');
+$otherIp = '192.0.2.51';
+$otherLog = (string)Monitor::logs(['ip' => $otherIp])['rows'][0]['id'];
+$ownLog = (string)Monitor::logs(['ip' => $ip])['rows'][0]['id'];
+rejects(fn() => Monitor::blockSelected([$otherLog, $ownLog]), 'bulk block rejects the administrator IP');
+rejects(fn() => Monitor::blockSelected([$otherLog, '999999']), 'bulk block rejects missing log IDs');
+check(!Monitor::blocked($otherIp), 'invalid selections leave other IPs unaffected');
+Storage::transaction('settings', static fn($saved) => [array_replace($saved, ['allow_ips' => [$otherIp]]), null]);
+rejects(fn() => Monitor::blockSelected([$otherLog]), 'bulk block respects allow-listed IPs');
+Settings::save($settingsInput);
 Database::query('DELETE FROM ' . Database::table('logs'));
 $security = \NxMultiTool\Security::inspect();
 check(array_column($security['items'], 'area') === ['both', 'cms', 'cms', 'both', 'server', 'cms', 'both', 'both', 'versions', 'cms', 'both', 'both', 'cms', 'server', 'server', 'both', 'cms', 'cms', 'both', 'server'], '20 security categories with approved confirmation sources');
@@ -120,6 +129,39 @@ Settings::save($settingsInput);
 foreach (['198.51.100.11', '198.51.100.11', '198.51.100.11', '198.51.100.12'] as $index => $address) {
     $insertLog(time() - $index * 60, $address);
 }
+$commentIp = '198.51.100.11';
+$noCommentIp = '198.51.100.12';
+Comments::submit('post', 1, ['name' => '確認用', 'body' => '以前の確認用コメント'], $commentIp);
+$latestComment = Comments::submit('post', 1, ['name' => '確認用', 'body' => '最新の確認用コメント'], $commentIp);
+$counts = Comments::countsByIp([$commentIp, $noCommentIp, $commentIp]);
+check(count($counts) === 1 && (int)$counts[$commentIp]['comment_count'] === 2
+    && (int)$counts[$commentIp]['latest_id'] === $latestComment, 'per-IP comment counts and newest ID');
+check((int)Comments::list(['ip' => $commentIp])['rows'][0]['id'] === $latestComment
+    && Comments::list(['ip' => $noCommentIp])['total'] === 0, 'comment manager uses the exact IP');
+check(Monitor::logs(['sort' => 'comments', 'dir' => 'asc'], 1)['rows'][0]['ip'] === $noCommentIp
+    && Monitor::logs(['sort' => 'comments', 'dir' => 'desc'], 1)['rows'][0]['ip'] === $commentIp,
+    'comment count ordering includes zero counts and precedes pagination');
+$commentIpRows = Monitor::logs(['ip' => $commentIp])['rows'];
+$selectedIds = array_map('strval', array_column($commentIpRows, 'id'));
+Monitor::block($commentIp, false);
+check(isset(Monitor::blocks()[$commentIp]['until']), 'existing comment block can be temporary');
+check(Monitor::blockSelected($selectedIds) === 1 && Monitor::blocks()[$commentIp] === ['permanent' => true],
+    'selected logs are deduplicated by IP and remove the expiry for that IP');
+Monitor::block($commentIp, false);
+check(Monitor::blocks()[$commentIp] === ['permanent' => true], 'comment block does not downgrade permanent access refusal');
+check(Monitor::logs(['sort' => 'blocked', 'dir' => 'desc'], 1)['rows'][0]['ip'] === $commentIp
+    && array_keys(Monitor::ipSummary(1, ['ip_sort' => 'blocked', 'ip_dir' => 'asc', 'ip_per_page' => '1'])['dates']) === [$noCommentIp],
+    'effective block status sorts the full results in both tables');
+Monitor::block($commentIp, true);
+check(!Monitor::blocked($commentIp), 'permanent block can be released');
+Monitor::saveMemo($commentIp, 'memo_100%');
+check(Monitor::ipSummary(1, ['ip_q' => '100%'])['total'] === 1
+    && Monitor::ipSummary(1, ['ip_q' => '%_'])['total'] === 0
+    && Monitor::ipSummary(1, ['ip_q' => '198.51.100.'])['total'] === 2, 'IP summary searches IP and memo literally');
+check(Monitor::logs(['sort' => 'memo', 'dir' => 'desc'], 1)['rows'][0]['ip'] === $commentIp
+    && array_keys(Monitor::ipSummary(2, ['ip_sort' => 'memo', 'ip_dir' => 'asc', 'ip_per_page' => '1'])['dates']) === [$commentIp],
+    'memo order and page size apply across the search results');
+Monitor::saveMemo($commentIp, '');
 $_SESSION = $adminSession;
 Storage::transaction('settings', static fn($saved) => [array_replace($saved, ['site_url'=>'https://old.example.test']), null]);
 $_SERVER['HTTP_HOST'] = 'current.example.test';

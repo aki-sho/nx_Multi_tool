@@ -39,15 +39,21 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
       const accessLog = document.querySelector('[data-access-log]');
       const search = accessLog.querySelector('input[type="search"]');
       const deleteButton = accessLog.querySelector('[data-log-delete]');
+      const blockButton = accessLog.querySelector('[data-log-block-selected]');
       return search.placeholder === '検索（URL・参照元・UA・IP）'
         && !search.form.querySelector('[name=ip]')
-        && search.getBoundingClientRect().left > deleteButton.getBoundingClientRect().right
+        && blockButton.previousElementSibling === deleteButton && deleteButton.disabled && blockButton.disabled
+        && search.getBoundingClientRect().left > blockButton.getBoundingClientRect().right
         && [...accessLog.querySelectorAll('.nxmt-log-filter label')].every(label =>
           label.firstElementChild.getBoundingClientRect().right < label.lastElementChild.getBoundingClientRect().left)
-        && Array.from(accessLog.querySelectorAll('[data-log-table] th')).map(th => th.textContent).slice(3).join(',') === 'IP,拒否状態,URL,参照元,UA,メモ';
-    })()`), 'compact access log toolbar and separate columns');
+        && [...accessLog.querySelectorAll('[data-log-table] th .nxmt-log-sort')]
+          .map(control => control.firstChild.textContent.trim()).join(',') === '選択,日時,HTTP,IP,拒否状態,URL,参照元,UA,コメント,メモ'
+        && accessLog.querySelectorAll('[data-log-ip-table] th .nxmt-log-sort').length === 5
+        && !accessLog.textContent.includes('期限付き拒否') && !accessLog.textContent.includes('同じIPのコメント');
+    })()`), 'bulk toolbar, sortable columns and no row actions');
     await evaluate(`const form = document.querySelector('.nxmt-log-filter');
-      form.elements.q.value = '198.51.100.11'; form.elements.per_page.value = '2'; form.requestSubmit(); void 0`);
+      form.elements.q.value = '198.51.100.11'; form.elements.per_page.value = '2';
+      form.querySelector('button[type="submit"]').click(); void 0`);
     await waitFor(`document.readyState === 'complete' && new URLSearchParams(location.search).get('per_page') === '2'
       && document.querySelectorAll('[data-log-table] tbody input[name="memo"]').length === 2`);
     check(await evaluate(`(() => {
@@ -70,6 +76,57 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
     await evaluate(`const form = document.querySelector('[data-memo-ip]'); form.elements.memo.value = ''; form.requestSubmit(); void 0`);
     await waitFor(`document.querySelector('[data-ip-memo="198.51.100.11"]').textContent === '—'`);
     check(await evaluate(`new URLSearchParams(location.search).get('page') === '2'`), 'clearing memo leaves current view intact');
+    await go(logRoute + '&per_page=1&sort=comments&dir=asc');
+    check(await evaluate(`(() => {
+      const cell = document.querySelector('[data-log-table] tbody tr').cells[8];
+      return cell.textContent.trim() === '0件' && !cell.querySelector('a');
+    })()`), 'ascending comment order starts at zero, without a link');
+    await evaluate(`document.querySelector('[data-log-table] th[aria-sort="ascending"] a').click()`);
+    await waitFor(`document.readyState === 'complete' && new URLSearchParams(location.search).get('dir') === 'desc'`);
+    const latestHref = await evaluate(`(() => {
+      const link = document.querySelector('[data-log-table] tbody tr').cells[8].querySelector('a');
+      return link?.textContent === '2件' ? link.href : '';
+    })()`);
+    check(latestHref.includes('ip=198.51.100.11#nxmt-comment-'), 'descending comment order links to the latest comment');
+    await evaluate(`document.querySelector('[data-log-table] tbody tr').cells[8].querySelector('a').click()`);
+    await waitFor(`document.readyState === 'complete' && document.querySelector('.nxmt-comment-row:target')?.textContent.includes('最新の確認用コメント')`);
+    check(await evaluate(`document.querySelectorAll('.nxmt-comment-row').length === 2`), 'comment link opens the matching IP and targets its newest comment');
+    await go(logRoute + '&q=198.51.100.11');
+    await evaluate(`const form = document.querySelector('.nxmt-log-ip-filter');
+      form.elements.ip_q.value = '198.51.100.'; form.elements.ip_per_page.value = '1';
+      form.querySelector('button[type="submit"]').click(); void 0`);
+    await waitFor(`document.readyState === 'complete' && new URLSearchParams(location.search).get('ip_per_page') === '1'`);
+    check(await evaluate(`document.querySelectorAll('[data-log-table] tbody input[type="checkbox"]').length === 3
+      && document.querySelectorAll('[data-log-ip-table] tbody textarea').length === 1
+      && document.querySelector('[aria-label="IP一覧のページ送り"]').textContent.includes('1 / 2')`), 'IP search and display count are independent of the top filter');
+    await evaluate(`document.querySelector('[data-log-ip-table] th[aria-sort="descending"] a').click()`);
+    await waitFor(`document.readyState === 'complete' && new URLSearchParams(location.search).get('ip_dir') === 'asc'`);
+    check(await evaluate(`document.querySelector('[data-log-ip-table] tbody td').textContent === '198.51.100.12'`), 'IP list sort changes the results before splitting into pages');
+    await evaluate(`const search = document.querySelector('.nxmt-log-ip-filter input[name="ip_q"]'); search.value = '198.51.100.11'; search.focus()`);
+    await command('Input.dispatchKeyEvent', {type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r'});
+    await command('Input.dispatchKeyEvent', {type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13});
+    await waitFor(`document.readyState === 'complete' && new URLSearchParams(location.search).get('ip_q') === '198.51.100.11'`);
+    check(await evaluate(`document.querySelector('[data-log-ip-table] tbody td').textContent === '198.51.100.11'`), 'typing Enter still submits the search');
+    await go(logRoute + '&q=198.51.100.11');
+    await evaluate(`(() => {
+      const boxes = [...document.querySelectorAll('[data-log-table] tbody input[type="checkbox"]')];
+      boxes.slice(1).forEach(box => box.click());
+      document.querySelector('[data-sort-selection]').click();
+    })()`);
+    check(await evaluate(`document.querySelector('[data-log-table] tbody input[type="checkbox"]').checked
+      && !document.querySelector('[data-log-block-selected]').disabled`), 'selected rows can be sorted and blocked');
+    check(await evaluate(`(async () => {
+      const form = document.getElementById('nxmt-log-bulk'); const body = new FormData(form);
+      body.delete('_csrf_token'); body.set('op', 'block_selected');
+      return (await fetch(form.action, {method: 'POST', body})).status === 419;
+    })()`), 'bulk block requires CSRF');
+    await evaluate(`document.querySelector('[data-log-block-selected]').click()`);
+    await waitFor(`document.readyState === 'complete' && document.querySelector('.nxmt-notice')?.textContent.includes('1件のIPを拒否')`);
+    check(await evaluate(`document.querySelectorAll('[data-log-table] .nxmt-log-badge.is-blocked').length === 3
+      && document.querySelectorAll('[data-log-ip-table] .nxmt-log-badge.is-blocked').length === 1`), 'both tables reflect the permanent block for one selected IP');
+    await evaluate(`document.querySelector('form:has([name=op][value=unblock]) button').click()`);
+    await waitFor(`document.readyState === 'complete' && document.querySelector('[data-log-table] .nxmt-log-badge')?.textContent === '未拒否'`);
+    check(await evaluate(`!document.querySelector('[data-log-ip-table] .nxmt-log-badge.is-blocked')`), 'both tables reflect unblocking');
     await go('/admin/extensions/nx_Multi_tool/dashboard?tool=security_check');
     check(await evaluate(`Array.from(document.querySelectorAll('.nxmt-security-sources input')).every(box =>
       box.getBoundingClientRect().width <= 24 && box.nextElementSibling.getBoundingClientRect().left - box.getBoundingClientRect().right <= 12)

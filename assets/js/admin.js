@@ -16,12 +16,27 @@
   const accessLog = root.querySelector('[data-access-log]');
   if (accessLog) {
     const logTable = accessLog.querySelector('[data-log-table]');
-    const deleteButton = accessLog.querySelector('[data-log-delete]');
+    const logActions = accessLog.querySelectorAll('[data-log-action]');
+    const selectionSort = logTable.querySelector('[data-sort-selection]');
+    const selections = [...logTable.querySelectorAll('tbody input[type="checkbox"]')];
     function updateLogSelection() {
-      deleteButton.disabled = !logTable.querySelector('input[type="checkbox"]:checked');
+      const hasSelection = selections.some(box => box.checked);
+      logActions.forEach(button => { button.disabled = !hasSelection; });
     }
     updateLogSelection();
     logTable.addEventListener('change', updateLogSelection);
+    selectionSort.disabled = selections.length === 0;
+    let selectedFirst = true;
+    selectionSort.addEventListener('click', () => {
+      const compare = (left, right) => Number(right.checked) - Number(left.checked);
+      const ordered = [...selections].sort((left, right) => selectedFirst ? compare(left, right) : compare(right, left));
+      ordered.forEach(box => logTable.tBodies[0].append(box.closest('tr')));
+      logTable.querySelector('th[aria-sort]')?.removeAttribute('aria-sort');
+      selectionSort.closest('th').setAttribute('aria-sort', selectedFirst ? 'descending' : 'ascending');
+      selectionSort.querySelector('span').textContent = selectedFirst ? '↓' : '↑';
+      selectedFirst = !selectedFirst;
+      selectionSort.setAttribute('aria-label', selectedFirst ? 'チェックしたログを上に並べ替え' : 'チェックしていないログを上に並べ替え');
+    });
     logTable.addEventListener('submit', async event => {
       const form = event.target;
       if (!form.matches('[data-memo-ip]')) return;

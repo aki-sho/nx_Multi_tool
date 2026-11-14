@@ -8,6 +8,16 @@ final class Monitor
     public const MEMO_LIMIT = 500;
     public const SUMMARY_DAYS = 30;
 
+    private const LOG_ORDER = [
+        'date' => 'logs.created_at', 'http' => 'logs.status', 'ip' => 'logs.ip', 'blocked' => '',
+        'url' => 'logs.url', 'referrer' => 'logs.referrer', 'ua' => 'logs.ua',
+        'comments' => 'COALESCE(comment_totals.comment_count, 0)', 'memo' => "COALESCE(memos.memo, '')",
+    ];
+    private const SUMMARY_ORDER = [
+        'ip' => 'ips.ip', 'count' => 'ips.visits', 'blocked' => '', 'date' => 'ips.latest',
+        'memo' => "COALESCE(memos.memo, '')",
+    ];
+
     public static function normalizeIp(string $ip): string
     {
         if (!filter_var($ip, FILTER_VALIDATE_IP)) { return ''; }
@@ -24,8 +34,13 @@ final class Monitor
     }
     public static function blocks(): array
     {
-        $data = Storage::read('blocks'); $now = time();
-        return array_filter($data, static fn($value) => is_array($value) && (int)($value['until'] ?? 0) > $now);
+        return self::activeEntries(Storage::read('blocks'));
+    }
+    private static function activeEntries(array $entries): array
+    {
+        $now = time();
+        return array_filter($entries, static fn($entry) => is_array($entry)
+            && (($entry['permanent'] ?? false) === true || (int)($entry['until'] ?? 0) > $now));
     }
     public static function blocked(string $ip): bool
     {
@@ -39,13 +54,30 @@ final class Monitor
             throw new \InvalidArgumentException('このIPは拒否できません。自分のIPと許可リストを確認してください。');
         }
         Storage::transaction('blocks', static function ($old) use ($ip, $remove, $settings) {
-            $now = time(); $old = array_filter($old, static fn($row) => is_array($row) && ($row['until'] ?? 0) > $now);
+            $old = self::activeEntries($old);
             if ($remove) { unset($old[$ip]); }
-            else {
+            elseif (($old[$ip]['permanent'] ?? false) !== true) {
                 if (count($old) >= 2000 && !isset($old[$ip])) { throw new \RuntimeException('拒否リストは2000件までです。'); }
-                $old[$ip] = ['until' => $now + (int)$settings['block_hours'] * 3600];
+                $old[$ip] = ['until' => time() + (int)$settings['block_hours'] * 3600];
             }
             return [$old, null];
+        });
+    }
+
+    public static function blockSelected(array $ids): int
+    {
+        $addresses = Database::query('SELECT ip FROM ' . Database::table('logs') . ' WHERE id IN (' .
+            implode(',', array_fill(0, count($ids), '?')) . ')', $ids)->fetchAll(\PDO::FETCH_COLUMN);
+        if (count($addresses) !== count($ids)) { throw new \RuntimeException('選択したログが見つかりません。再選択してください。'); }
+        $ips = array_unique(array_map([self::class, 'normalizeIp'], $addresses));
+        $unavailable = array_merge(['', self::ip()], Settings::all()['allow_ips']);
+        if (array_intersect($ips, $unavailable)) {
+            throw new \InvalidArgumentException('IPが不明なログ、自分のIP、許可リストのIPは拒否できません。選択を確認してください。');
+        }
+        return Storage::transaction('blocks', static function (array $old) use ($ips): array {
+            $entries = array_replace(self::activeEntries($old), array_fill_keys($ips, ['permanent' => true]));
+            if (count($entries) > 2000) { throw new \RuntimeException('拒否リストは2000件までです。'); }
+            return [$entries, count($ips)];
         });
     }
     public static function boot(): void
@@ -85,58 +117,114 @@ final class Monitor
         $cut = Database::query('SELECT id FROM ' . Database::table('logs') . ' ORDER BY id DESC LIMIT 1 OFFSET ' . (int)$settings['log_max'])->fetchColumn();
         if ($cut !== false) { Database::query('DELETE FROM ' . Database::table('logs') . ' WHERE id <= ?', [(int)$cut]); }
     }
-    public static function logs(array $input, int $limit = self::DEFAULT_PER_PAGE, int $offset = 0): array
+    public static function sort(array $input, bool $summary = false): array
     {
+        $column = $input[$summary ? 'ip_sort' : 'sort'] ?? '';
+        if (!is_string($column) || !isset(($summary ? self::SUMMARY_ORDER : self::LOG_ORDER)[$column])) {
+            return ['column' => $summary ? 'count' : 'date', 'direction' => 'desc'];
+        }
+        return ['column' => $column, 'direction' => ($input[$summary ? 'ip_dir' : 'dir'] ?? '') === 'asc' ? 'asc' : 'desc'];
+    }
+
+    private static function blockOrder(string $column, ?array $blocks): array
+    {
+        $blocks ??= array_diff_key(self::blocks(), array_flip(Settings::all()['allow_ips']));
+        if (!$blocks) { return ["($column IS NULL)", []]; }
+        $placeholders = implode(',', array_fill(0, count($blocks), '?'));
+        return ["($column IN ($placeholders))", array_keys($blocks)];
+    }
+
+    private static function searchPattern(string $value): string
+    {
+        return '%' . strtr($value, ['=' => '==', '%' => '=%', '_' => '=_']) . '%';
+    }
+
+    public static function logs(array $input, int $limit = self::DEFAULT_PER_PAGE, int $offset = 0, ?array $blocks = null): array
+    {
+        $from = ' FROM ' . Database::table('logs') . ' AS logs';
         $where = ' WHERE 1=1'; $params = [];
         $q = trim(Access::text($input, 'q', 300));
         if ($q !== '') {
-            $escape = ['=' => '==', '%' => '=%', '_' => '=_'];
-            $value = '%' . strtr($q, $escape) . '%';
+            $value = self::searchPattern($q);
             $ip = self::normalizeIp($q);
-            $ipMatch = $ip === '' ? "ip LIKE ? ESCAPE '='" : 'ip = ?';
-            $where .= " AND (url LIKE ? ESCAPE '=' OR referrer LIKE ? ESCAPE '=' OR ua LIKE ? ESCAPE '=' OR $ipMatch)";
+            $ipMatch = $ip === '' ? "logs.ip LIKE ? ESCAPE '='" : 'logs.ip = ?';
+            $where .= " AND (logs.url LIKE ? ESCAPE '=' OR logs.referrer LIKE ? ESCAPE '=' OR logs.ua LIKE ? ESCAPE '=' OR $ipMatch)";
             array_push($params, $value, $value, $value, $ip === '' ? $value : $ip);
         }
-        if (!empty($input['ip'])) { $where .= ' AND ip = ?'; $params[] = self::normalizeIp(Access::text($input, 'ip', 45)); }
+        if (!empty($input['ip'])) { $where .= ' AND logs.ip = ?'; $params[] = self::normalizeIp(Access::text($input, 'ip', 45)); }
         foreach (['from' => '>=', 'to' => '<'] as $key => $operator) {
             $value = Access::text($input, $key, 10);
             if ($value !== '') {
                 $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $value);
                 if (!$date || $date->format('Y-m-d') !== $value) { throw new \InvalidArgumentException('日付が不正です。'); }
-                $where .= ' AND created_at ' . $operator . ' ?'; $params[] = ($key === 'to' ? $date->modify('+1 day') : $date)->getTimestamp();
+                $where .= ' AND logs.created_at ' . $operator . ' ?'; $params[] = ($key === 'to' ? $date->modify('+1 day') : $date)->getTimestamp();
             }
         }
-        $total = (int)Database::query('SELECT COUNT(*) FROM ' . Database::table('logs') . $where, $params)->fetchColumn();
-        $rows = Database::query('SELECT * FROM ' . Database::table('logs') . $where . ' ORDER BY id DESC LIMIT ' . max(1, min(1000, $limit)) . ' OFFSET ' . max(0, $offset), $params)->fetchAll();
+        $total = (int)Database::query('SELECT COUNT(*)' . $from . $where, $params)->fetchColumn();
+        $sort = self::sort($input);
+        $column = $sort['column'];
+        $order = self::LOG_ORDER[$column];
+        if ($column === 'memo') {
+            $from .= ' LEFT JOIN ' . Database::table('ip_memos') . ' AS memos ON memos.ip = logs.ip';
+        } elseif ($column === 'comments') {
+            $from .= ' LEFT JOIN (' . Comments::ipCountQuery() . ') AS comment_totals ON comment_totals.ip = logs.ip';
+        } elseif ($column === 'blocked') {
+            [$order, $bindings] = self::blockOrder('logs.ip', $blocks);
+            $params = array_merge($params, $bindings);
+        }
+        $direction = strtoupper($sort['direction']);
+        $rows = Database::query('SELECT logs.*' . $from . $where . " ORDER BY $order $direction, logs.id DESC LIMIT " .
+            max(1, min(1000, $limit)) . ' OFFSET ' . max(0, $offset), $params)->fetchAll();
         return ['rows' => $rows, 'total' => $total];
     }
 
-    public static function ipSummary(int $page): array
+    public static function ipSummary(int $page, array $input = [], ?array $blocks = null): array
     {
         $table = Database::table('logs');
         $now = time();
         $range = [$now - self::SUMMARY_DAYS * 86400, $now];
-        $total = (int)Database::query("SELECT COUNT(DISTINCT ip) FROM $table WHERE created_at BETWEEN ? AND ? AND ip <> ''", $range)->fetchColumn();
-        $limit = self::DEFAULT_PER_PAGE;
+        $search = trim(Access::text($input, 'ip_q', 300));
+        $sort = self::sort($input, true);
+        $limit = Access::integer($input, 'ip_per_page', 1, self::MAX_PER_PAGE, self::DEFAULT_PER_PAGE);
+        $from = " FROM (
+            SELECT ip, COUNT(*) AS visits, MAX(created_at) AS latest
+            FROM $table WHERE created_at BETWEEN ? AND ? AND ip <> '' GROUP BY ip
+        ) AS ips";
+        if ($search !== '' || $sort['column'] === 'memo') {
+            $from .= ' LEFT JOIN ' . Database::table('ip_memos') . ' AS memos ON memos.ip = ips.ip';
+        }
+        $params = $range;
+        if ($search !== '') {
+            $ip = self::normalizeIp($search);
+            $match = $ip === '' ? "ips.ip LIKE ? ESCAPE '='" : 'ips.ip = ?';
+            $from .= " WHERE ($match OR memos.memo LIKE ? ESCAPE '=')";
+            $pattern = self::searchPattern($search);
+            array_push($params, $ip === '' ? $pattern : $ip, $pattern);
+        }
+        $total = (int)Database::query('SELECT COUNT(*)' . $from, $params)->fetchColumn();
         $page = max(1, min($page, (int)ceil($total / $limit)));
         $offset = ($page - 1) * $limit;
         $dates = [];
         if ($total > 0) {
-            $stmt = Database::query(
-                "SELECT logs.ip, logs.created_at FROM (
-                    SELECT ip, COUNT(*) AS visits, MAX(created_at) AS latest
-                    FROM $table WHERE created_at BETWEEN ? AND ? AND ip <> '' GROUP BY ip
-                    ORDER BY visits DESC, latest DESC, ip ASC
-                    LIMIT $limit OFFSET $offset
-                ) AS ranked JOIN $table AS logs ON logs.ip = ranked.ip AND logs.created_at BETWEEN ? AND ?
-                ORDER BY ranked.visits DESC, ranked.latest DESC, ranked.ip ASC, logs.created_at DESC, logs.id DESC",
-                array_merge($range, $range)
-            );
-            while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-                $dates[$row['ip']][] = (int)$row['created_at'];
+            $order = self::SUMMARY_ORDER[$sort['column']];
+            if ($sort['column'] === 'blocked') {
+                [$order, $bindings] = self::blockOrder('ips.ip', $blocks);
+                $params = array_merge($params, $bindings);
+            }
+            $direction = strtoupper($sort['direction']);
+            $ips = Database::query('SELECT ips.ip' . $from . " ORDER BY $order $direction, ips.latest DESC, ips.ip ASC
+                LIMIT $limit OFFSET $offset", $params)->fetchAll(\PDO::FETCH_COLUMN);
+            if ($ips) {
+                $dates = array_fill_keys($ips, []);
+                $placeholders = implode(',', array_fill(0, count($ips), '?'));
+                $stmt = Database::query("SELECT ip, created_at FROM $table WHERE created_at BETWEEN ? AND ?
+                    AND ip IN ($placeholders) ORDER BY created_at DESC, id DESC", array_merge($range, $ips));
+                while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+                    $dates[$row['ip']][] = (int)$row['created_at'];
+                }
             }
         }
-        return ['dates' => $dates, 'total' => $total, 'page' => $page];
+        return ['dates' => array_filter($dates), 'total' => $total, 'page' => $page, 'per_page' => $limit];
     }
 
     public static function memos(array $ips): array
@@ -174,7 +262,8 @@ final class Monitor
 
     public static function listQuery(array $input): array
     {
-        $query = array_intersect_key($input, array_fill_keys(['q', 'ip', 'from', 'to', 'per_page', 'page', 'ip_page'], true));
+        $keys = ['q', 'ip', 'from', 'to', 'per_page', 'page', 'sort', 'dir', 'ip_q', 'ip_per_page', 'ip_page', 'ip_sort', 'ip_dir'];
+        $query = array_intersect_key($input, array_fill_keys($keys, true));
         return array_filter($query, static fn($value) => is_string($value) && strlen($value) <= 300);
     }
 }

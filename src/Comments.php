@@ -55,10 +55,31 @@ final class Comments
         if (in_array($status, ['pending', 'approved', 'spam', 'trash'], true)) { $where .= ' AND status = ?'; $params[] = $status; }
         $q = Access::text($filter, 'q', 300);
         if ($q !== '') { $where .= " AND (body LIKE ? ESCAPE '=' OR name LIKE ? ESCAPE '=' OR ip = ?)"; $term = '%' . strtr($q, ['=' => '==', '%' => '=%', '_' => '=_']) . '%'; array_push($params, $term, $term, $q); }
+        $ip = Access::text($filter, 'ip', 45);
+        if ($ip !== '') {
+            $ip = Monitor::normalizeIp($ip);
+            if ($ip === '') { throw new \InvalidArgumentException('IPアドレスを確認してください。'); }
+            $where .= ' AND ip = ?';
+            $params[] = $ip;
+        }
         if (!empty($filter['content_id'])) { $where .= ' AND content_id = ?'; $params[] = Access::integer($filter, 'content_id', 1, PHP_INT_MAX, 1); }
         return ['rows' => Database::query('SELECT * FROM ' . Database::table('comments') . $where . ' ORDER BY id DESC LIMIT 50 OFFSET ' . max(0, $offset), $params)->fetchAll(),
             'total' => (int)Database::query('SELECT COUNT(*) FROM ' . Database::table('comments') . $where, $params)->fetchColumn()];
     }
+    public static function ipCountQuery(int $ipCount = 0): string
+    {
+        $where = " WHERE ip <> ''";
+        if ($ipCount > 0) { $where .= ' AND ip IN (' . implode(',', array_fill(0, $ipCount, '?')) . ')'; }
+        return 'SELECT ip, COUNT(*) AS comment_count, MAX(id) AS latest_id FROM ' . Database::table('comments') . $where . ' GROUP BY ip';
+    }
+
+    public static function countsByIp(array $ips): array
+    {
+        $ips = array_values(array_unique(array_filter($ips)));
+        if (!$ips) { return []; }
+        return array_column(Database::query(self::ipCountQuery(count($ips)), $ips)->fetchAll(), null, 'ip');
+    }
+
     public static function act(string $action, array $ids): void
     {
         if (!$ids || count($ids) > 50) { throw new \InvalidArgumentException('コメントを1〜50件選択してください。'); }

@@ -7,12 +7,13 @@ $list = Monitor::listQuery($_GET);
 $list['page'] = (string)$page;
 $list['per_page'] = (string)$data['per_page'];
 $list['ip_page'] = (string)$data['ip_summary']['page'];
-$exportQuery = array_intersect_key($list, array_flip(['q', 'ip', 'from', 'to']));
+$list['ip_per_page'] = (string)$data['ip_summary']['per_page'];
+$exportQuery = array_intersect_key($list, array_flip(['q', 'ip', 'from', 'to', 'sort', 'dir']));
 $exportQuery['tool'] = 'access_log';
 $exportQuery['_csrf_token'] = \app\Core\Csrf::token();
 $filterQuery = ($list['q'] ?? '') !== '' ? $list['q'] : ($list['ip'] ?? '');
-$allowList = array_flip($settings['allow_ips']);
-$activeBlocks = array_diff_key($data['blocks'], $allowList);
+$activeBlocks = $data['active_blocks'];
+$canOpenComments = !empty($settings['tools']['comment_manager']);
 $searchLabel = '検索（URL・参照元・UA・IP）';
 $formAction = Registry::endpoint('action');
 $returnFields = static function () use ($list): void {
@@ -23,22 +24,52 @@ $returnFields = static function () use ($list): void {
 $blockStatus = static function (?array $block): void { ?>
     <span class="nxmt-log-badge<?= $block ? ' is-blocked' : '' ?>"><?= $block ? '拒否中' : '未拒否' ?></span>
 <?php };
+$keepFields = static function (array $names) use ($list): void {
+    foreach (array_intersect_key($list, array_flip($names)) as $key => $value): ?>
+        <input type="hidden" name="<?= e($key) ?>" value="<?= e($value) ?>">
+    <?php endforeach;
+};
+$logSort = Monitor::sort($list);
+$ipSort = Monitor::sort($list, true);
+$sortHeading = static function (string $column, string $label, bool $summary = false) use ($list, $logSort, $ipSort): void {
+    $current = $summary ? $ipSort : $logSort;
+    $active = $current['column'] === $column;
+    $direction = $active && $current['direction'] === 'asc' ? 'desc' : 'asc';
+    $query = array_replace($list, [
+        ($summary ? 'ip_sort' : 'sort') => $column,
+        ($summary ? 'ip_dir' : 'dir') => $direction,
+        ($summary ? 'ip_page' : 'page') => 1,
+    ]);
+    $href = Registry::url('access_log') . '&' . http_build_query($query) . ($summary ? '#nxmt-log-ip-title' : '');
+    $indicator = $active ? ($current['direction'] === 'asc' ? '↑' : '↓') : '↕';
+    ?>
+    <th scope="col"<?= $active ? ' aria-sort="' . ($current['direction'] === 'asc' ? 'ascending' : 'descending') . '"' : '' ?>>
+        <a href="<?= e($href) ?>" class="nxmt-log-sort" aria-label="<?= e($label . ($direction === 'asc' ? 'を昇順に並べ替え' : 'を降順に並べ替え')) ?>">
+            <?= e($label) ?> <span aria-hidden="true"><?= $indicator ?></span>
+        </a>
+    </th>
+    <?php
+};
 ?>
 <section data-access-log aria-label="アクセスログ">
     <div class="nxmt-log-toolbar">
         <form id="nxmt-log-bulk" method="post" action="<?= e($formAction) ?>">
-            <?php AdminController::form('access_log', 'delete_selected'); $returnFields(); ?>
-            <button type="submit" class="secondary" data-log-delete data-confirm="選択したログを削除しますか？">選択ログを削除</button>
+            <?php AdminController::form('access_log', ''); $returnFields(); ?>
+            <button type="submit" name="op" value="delete_selected" class="secondary" data-log-delete data-log-action
+                data-confirm="選択したログを削除しますか？">選択ログを削除</button>
+            <button type="submit" name="op" value="block_selected" class="secondary" data-log-block-selected data-log-action
+                data-confirm="選択したログのIPを拒否しますか？ 拒否リストで解除できます。">選択IPを拒否</button>
         </form>
         <form class="nxmt-log-filter" method="get" action="<?= e(Registry::url()) ?>">
             <input type="hidden" name="tool" value="access_log">
+            <?php $keepFields(['sort', 'dir', 'ip_q', 'ip_per_page', 'ip_page', 'ip_sort', 'ip_dir']); ?>
             <input class="nxmt-log-search" type="search" name="q" value="<?= e($filterQuery) ?>"
                 placeholder="<?= e($searchLabel) ?>" aria-label="<?= e($searchLabel) ?>" spellcheck="false">
             <label><span>開始日</span><input type="date" name="from" value="<?= e($list['from'] ?? '') ?>"></label>
             <label><span>終了日</span><input type="date" name="to" value="<?= e($list['to'] ?? '') ?>"></label>
             <label><span>表示件数</span><input type="number" name="per_page" min="1" max="<?= Monitor::MAX_PER_PAGE ?>"
                 value="<?= (int)$data['per_page'] ?>" required></label>
-            <button type="submit">適用</button>
+            <button type="submit">検索</button>
         </form>
     </div>
     <?php if (isset($data['filter_error'])): ?><p class="nxmt-notice is-error" role="alert"><?= e($data['filter_error']) ?></p><?php endif; ?>
@@ -46,41 +77,32 @@ $blockStatus = static function (?array $block): void { ?>
     <div class="nxmt-table-wrap">
         <table class="nxmt-log-table" data-log-table>
             <thead><tr>
-                <th scope="col">選択</th>
-                <th scope="col">日時</th>
-                <th scope="col">HTTP</th>
-                <th scope="col">IP</th>
-                <th scope="col">拒否状態</th>
-                <th scope="col">URL</th>
-                <th scope="col">参照元</th>
-                <th scope="col">UA</th>
-                <th scope="col">メモ</th>
+                <th scope="col">
+                    <button type="button" class="nxmt-log-sort" data-sort-selection aria-label="チェックしたログを上に並べ替え">
+                        選択 <span aria-hidden="true">↕</span>
+                    </button>
+                </th>
+                <?php foreach (['date' => '日時', 'http' => 'HTTP', 'ip' => 'IP', 'blocked' => '拒否状態',
+                    'url' => 'URL', 'referrer' => '参照元', 'ua' => 'UA', 'comments' => 'コメント', 'memo' => 'メモ'] as $column => $label) {
+                    $sortHeading($column, $label);
+                } ?>
             </tr></thead>
             <tbody>
                 <?php foreach ($data['rows'] as $row):
                     $ip = $row['ip'];
                     $block = $activeBlocks[$ip] ?? null;
                     $memo = $data['memos'][$ip] ?? '';
+                    $comment = $data['comments'][$ip] ?? null;
+                    $commentCount = (int)($comment['comment_count'] ?? 0);
                 ?>
                     <tr>
                         <td><input form="nxmt-log-bulk" type="checkbox" name="ids[]" value="<?= (int)$row['id'] ?>" aria-label="ログ<?= (int)$row['id'] ?>"></td>
                         <td class="nxmt-log-nowrap"><?= e(date('Y-m-d H:i:s', $row['created_at'])) ?></td>
                         <td class="nxmt-log-nowrap"><?= e($row['method']) ?> <?= (int)$row['status'] ?></td>
                         <td class="nxmt-log-nowrap"><?= e($ip ?: '—') ?></td>
-                        <td class="nxmt-log-block">
+                        <td>
                             <?php if ($ip !== ''): ?>
                                 <?php $blockStatus($block); ?>
-                                <?php if ($block): ?><small><?= e(date('Y-m-d H:i', $block['until'])) ?>まで</small><?php endif; ?>
-                                <?php if (!isset($allowList[$ip])): ?>
-                                    <form method="post" action="<?= e($formAction) ?>">
-                                        <?php AdminController::form('access_log', $block ? 'unblock' : 'block'); $returnFields(); ?>
-                                        <input type="hidden" name="ip" value="<?= e($ip) ?>">
-                                        <button type="submit" class="secondary" data-confirm="このIPの拒否状態を変更しますか？"><?= $block ? '拒否解除' : '期限付き拒否' ?></button>
-                                    </form>
-                                <?php endif; ?>
-                                <?php if (!empty($settings['tools']['comment_manager'])): ?>
-                                    <a href="<?= e(Registry::url('comment_manager') . '&q=' . rawurlencode($ip)) ?>">同じIPのコメント</a>
-                                <?php endif; ?>
                             <?php else: ?>
                                 —
                             <?php endif; ?>
@@ -88,6 +110,14 @@ $blockStatus = static function (?array $block): void { ?>
                         <td class="nxmt-log-wrap"><?= e($row['url'] ?: '—') ?></td>
                         <td class="nxmt-log-wrap"><?= e($row['referrer'] ?: '—') ?></td>
                         <td class="nxmt-log-wrap"><?= e($row['ua'] ?: '—') ?></td>
+                        <td class="nxmt-log-nowrap">
+                            <?php if ($commentCount > 0 && $canOpenComments): ?>
+                                <a href="<?= e(Registry::url('comment_manager') . '&ip=' . rawurlencode($ip) . '#nxmt-comment-' . (int)$comment['latest_id']) ?>"
+                                    aria-label="<?= e($ip . ' の最新コメントを表示（' . $commentCount . '件）') ?>"><?= $commentCount ?>件</a>
+                            <?php else: ?>
+                                <?= $commentCount ?>件
+                            <?php endif; ?>
+                        </td>
                         <td>
                             <?php if ($ip !== ''): ?>
                                 <form class="nxmt-log-memo" method="post" action="<?= e($formAction) ?>" data-memo-ip="<?= e($ip) ?>">
@@ -103,7 +133,7 @@ $blockStatus = static function (?array $block): void { ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>
-                <?php if (!$data['rows']): ?><tr><td colspan="9">該当するログはありません。</td></tr><?php endif; ?>
+                <?php if (!$data['rows']): ?><tr><td colspan="10">該当するログはありません。</td></tr><?php endif; ?>
             </tbody>
         </table>
     </div>
@@ -113,16 +143,25 @@ $blockStatus = static function (?array $block): void { ?>
     </div>
 
     <section class="nxmt-log-ip-summary" aria-labelledby="nxmt-log-ip-title">
-        <h2 id="nxmt-log-ip-title">IP一覧</h2>
+        <div class="nxmt-log-ip-heading">
+            <h2 id="nxmt-log-ip-title">IP一覧</h2>
+            <form class="nxmt-log-filter nxmt-log-ip-filter" method="get" action="<?= e(Registry::url() . '#nxmt-log-ip-title') ?>">
+                <input type="hidden" name="tool" value="access_log">
+                <?php $keepFields(['q', 'ip', 'from', 'to', 'per_page', 'page', 'sort', 'dir', 'ip_sort', 'ip_dir']); ?>
+                <input type="search" name="ip_q" class="nxmt-log-search" value="<?= e($list['ip_q'] ?? '') ?>"
+                    placeholder="検索（IP・メモ）" aria-label="IP一覧を検索（IP・メモ）" spellcheck="false">
+                <label><span>表示件数</span><input type="number" name="ip_per_page" min="1" max="<?= Monitor::MAX_PER_PAGE ?>"
+                    value="<?= (int)$data['ip_summary']['per_page'] ?>" required></label>
+                <button type="submit">検索</button>
+            </form>
+        </div>
         <p class="nxmt-muted nxmt-log-note">直近30日間の保存ログをIPごとに集計しています。上のアクセスログでメモを保存すると、ここにも反映されます。</p>
         <div class="nxmt-table-wrap">
             <table class="nxmt-log-ip-table" data-log-ip-table>
                 <thead><tr>
-                    <th scope="col">IP</th>
-                    <th scope="col">回数（30日）</th>
-                    <th scope="col">拒否状態</th>
-                    <th scope="col">日時</th>
-                    <th scope="col">メモ</th>
+                    <?php foreach (['ip' => 'IP', 'count' => '回数（30日）', 'blocked' => '拒否状態', 'date' => '日時', 'memo' => 'メモ'] as $column => $label) {
+                        $sortHeading($column, $label, true);
+                    } ?>
                 </tr></thead>
                 <tbody>
                     <?php foreach ($data['ip_summary']['dates'] as $ip => $dates):
@@ -136,13 +175,13 @@ $blockStatus = static function (?array $block): void { ?>
                             <td class="nxmt-log-wrap" data-ip-memo="<?= e($ip) ?>"><?= e($data['memos'][$ip] ?? '—') ?></td>
                         </tr>
                     <?php endforeach; ?>
-                    <?php if (!$data['ip_summary']['dates']): ?><tr><td colspan="5">直近30日間のログはありません。</td></tr><?php endif; ?>
+                    <?php if (!$data['ip_summary']['dates']): ?><tr><td colspan="5">該当するIPはありません。</td></tr><?php endif; ?>
                 </tbody>
             </table>
         </div>
-        <?php if ($data['ip_summary']['total'] > Monitor::DEFAULT_PER_PAGE): ?>
+        <?php if ($data['ip_summary']['total'] > $data['ip_summary']['per_page']): ?>
             <?php AdminController::pagination('access_log', $data['ip_summary']['page'], $data['ip_summary']['total'],
-                Monitor::DEFAULT_PER_PAGE, 'ip_page', 'IP一覧のページ送り'); ?>
+                $data['ip_summary']['per_page'], 'ip_page', 'IP一覧のページ送り', '#nxmt-log-ip-title'); ?>
         <?php endif; ?>
     </section>
 </section>
@@ -162,11 +201,11 @@ $blockStatus = static function (?array $block): void { ?>
         </form>
     </div>
     <h3>現在の拒否リスト</h3>
-    <?php foreach ($data['blocks'] as $ip => $block): ?>
+    <?php foreach (array_keys($data['blocks']) as $ip): ?>
         <form class="nxmt-inline" method="post" action="<?= e($formAction) ?>">
             <?php AdminController::form('access_log', 'unblock'); $returnFields(); ?>
             <input type="hidden" name="ip" value="<?= e($ip) ?>">
-            <span><?= e($ip) ?> · <?= e(date('Y-m-d H:i', $block['until'])) ?>まで</span>
+            <span><?= e($ip) ?></span>
             <button class="secondary">拒否解除</button>
         </form>
     <?php endforeach; ?>

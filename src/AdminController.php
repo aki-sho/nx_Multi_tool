@@ -20,21 +20,24 @@ final class AdminController
                 $perPage = Access::integer($_GET, 'per_page', 1, Monitor::MAX_PER_PAGE, Monitor::DEFAULT_PER_PAGE);
                 $ipPage = Access::integer($_GET, 'ip_page', 1, 100000, 1);
                 Monitor::prune($settings);
+                $data['blocks'] = Monitor::blocks();
+                $data['active_blocks'] = array_diff_key($data['blocks'], array_flip($settings['allow_ips']));
                 $filter = $_GET;
                 if (is_string($filter['from'] ?? null) && is_string($filter['to'] ?? null)
                     && $filter['from'] !== '' && $filter['to'] !== '' && $filter['from'] > $filter['to']) {
                     $data['filter_error'] = '終了日を開始日以降にしてください。';
                 }
-                $data += Monitor::logs($filter, $perPage, ($page - 1) * $perPage);
+                $data += Monitor::logs($filter, $perPage, ($page - 1) * $perPage, $data['active_blocks']);
                 $lastPage = max(1, (int)ceil($data['total'] / $perPage));
                 if ($page > $lastPage) {
                     $page = $lastPage;
-                    $data = array_replace($data, Monitor::logs($filter, $perPage, ($page - 1) * $perPage));
+                    $data = array_replace($data, Monitor::logs($filter, $perPage, ($page - 1) * $perPage, $data['active_blocks']));
                 }
                 $data['per_page'] = $perPage;
-                $data['ip_summary'] = Monitor::ipSummary($ipPage);
-                $data['memos'] = Monitor::memos(array_merge(array_column($data['rows'], 'ip'), array_keys($data['ip_summary']['dates'])));
-                $data['blocks'] = Monitor::blocks();
+                $data['ip_summary'] = Monitor::ipSummary($ipPage, $_GET, $data['active_blocks']);
+                $ips = array_column($data['rows'], 'ip');
+                $data['memos'] = Monitor::memos(array_merge($ips, array_keys($data['ip_summary']['dates'])));
+                $data['comments'] = Comments::countsByIp($ips);
             }
             if ($tool === 'comment_manager') { $data = Comments::list($_GET, ($page - 1) * 50); $data['review'] = $_SESSION['nxmt_block_review'] ?? null; }
             if ($tool === 'security_check') { $data = Security::inspect(); }
@@ -103,21 +106,28 @@ final class AdminController
         $tool = Access::text($_POST, 'tool', 40); Access::requireTool($tool, true);
         try {
             $op = Access::text($_POST, 'op', 30);
-            if (in_array($tool, ['access_log', 'comment_manager'], true) && in_array($op, ['block', 'unblock'], true)) {
+            $message = '操作を完了しました。';
+            if (($tool === 'access_log' && $op === 'unblock')
+                || ($tool === 'comment_manager' && in_array($op, ['block', 'unblock'], true))) {
                 Monitor::block(Access::text($_POST, 'ip', 45), $op === 'unblock');
             } elseif ($tool === 'access_log') {
                 if ($op === 'save_ip_memo') {
                     Monitor::saveMemoFrom($_POST);
                 } elseif ($op === 'truncate' && ($_POST['confirm'] ?? '') === 'DELETE') { Database::query('DELETE FROM ' . Database::table('logs')); }
                 elseif ($op === 'purge') { Database::query('DELETE FROM ' . Database::table('logs') . ' WHERE created_at < ?', [time() - Access::integer($_POST, 'days', 1, 365, 30) * 86400]); }
-                elseif ($op === 'delete_selected') {
+                elseif (in_array($op, ['delete_selected', 'block_selected'], true)) {
                     $ids = $_POST['ids'] ?? [];
                     if (!is_array($ids) || !$ids || count($ids) > Monitor::MAX_PER_PAGE) {
                         throw new \InvalidArgumentException('ログを1〜' . Monitor::MAX_PER_PAGE . '件選択してください。');
                     }
                     foreach ($ids as $id) { if (!is_string($id) || !ctype_digit($id)) { throw new \InvalidArgumentException('ログIDが不正です。'); } }
-                    Database::query('DELETE FROM ' . Database::table('logs') . ' WHERE id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')', $ids);
-                } else { throw new \InvalidArgumentException('削除操作を確認してください。'); }
+                    $ids = array_values(array_unique($ids));
+                    if ($op === 'block_selected') {
+                        $message = Monitor::blockSelected($ids) . '件のIPを拒否しました。';
+                    } else {
+                        Database::query('DELETE FROM ' . Database::table('logs') . ' WHERE id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')', $ids);
+                    }
+                } else { throw new \InvalidArgumentException('ログの操作を確認してください。'); }
             } elseif ($tool === 'comment_manager') {
                 if ($op === 'confirm_block') { Comments::confirmBlock(Access::text($_POST, 'review_token', 32)); }
                 elseif ($op === 'cancel_block') { unset($_SESSION['nxmt_block_review']); }
@@ -127,7 +137,7 @@ final class AdminController
                     Comments::act($op, $ids);
                 }
             } else { throw new \InvalidArgumentException('操作が不正です。'); }
-            $_SESSION['nxmt_notice'] = ['success', '操作を完了しました。'];
+            $_SESSION['nxmt_notice'] = ['success', $message];
         } catch (\Throwable $e) { $_SESSION['nxmt_notice'] = ['error', $e->getMessage()]; }
         $returnQuery = $tool === 'access_log' && is_array($_POST['list'] ?? null) ? Monitor::listQuery($_POST['list']) : [];
         header('Location: ' . Registry::url($tool) . ($returnQuery ? '&' . http_build_query($returnQuery) : ''), true, 303);
@@ -171,15 +181,16 @@ final class AdminController
     }
     public static function form(string $tool, string $op): void
     {
-        echo '<input type="hidden" name="_csrf_token" value="' . \e(\app\Core\Csrf::token()) . '"><input type="hidden" name="tool" value="' . \e($tool) . '"><input type="hidden" name="op" value="' . \e($op) . '">';
+        echo '<input type="hidden" name="_csrf_token" value="' . \e(\app\Core\Csrf::token()) . '"><input type="hidden" name="tool" value="' . \e($tool) . '">';
+        if ($op !== '') { echo '<input type="hidden" name="op" value="' . \e($op) . '">'; }
     }
-    public static function pagination(string $tool, int $page, int $total, int $perPage = 50, string $parameter = 'page', string $label = 'ページ送り'): void
+    public static function pagination(string $tool, int $page, int $total, int $perPage = 50, string $parameter = 'page', string $label = 'ページ送り', string $fragment = ''): void
     {
         $pages = max(1, (int)ceil($total / $perPage));
         echo '<nav class="nxmt-pagination" aria-label="' . \e($label) . '">';
         foreach (['前へ' => max(1, $page - 1), '次へ' => min($pages, $page + 1)] as $caption => $number) {
             $query = $_GET; $query['tool'] = $tool; $query[$parameter] = $number;
-            echo '<a class="button" href="' . \e(Registry::url() . '?' . http_build_query($query)) . '">' . $caption . '</a>';
+            echo '<a class="button" href="' . \e(Registry::url() . '?' . http_build_query($query) . $fragment) . '">' . $caption . '</a>';
         }
         echo '<span>' . $page . ' / ' . $pages . ' ページ（' . $total . '件）</span></nav>';
     }
