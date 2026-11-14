@@ -30,7 +30,8 @@ final class Crawler
             }
         }
         $run = bin2hex(random_bytes(16));
-        $state = ['run' => $run, 'base' => $base, 'created' => time(), 'rows' => [], 'queue' => [], 'visited' => [], 'requests' => 0, 'excluded' => [], 'done' => false, 'limited' => false];
+        $state = ['run' => $run, 'base' => $base, 'login_path' => SiteInfo::loginPath(), 'created' => time(), 'rows' => [], 'queue' => [], 'visited' => [], 'requests' => 0, 'excluded' => [], 'done' => false, 'limited' => false];
+        self::add($state, \url($state['login_path']), $base . '/', 'CMS設定（ログイン）');
         foreach (['post', 'page'] as $type) {
             for ($offset = 0; $offset < 10000; $offset += 200) {
                 $page = Content::rows(['type' => $type, 'status' => 'published'], 200, $offset);
@@ -66,7 +67,7 @@ final class Crawler
         $tags = [];
         if (str_contains($path, '/uploads/')) { $tags[] = 'upload'; }
         if (str_contains($url, 'attachment_id=')) { $tags[] = 'attachment'; }
-        $protected = HttpClient::protectedUrl($url, $state['base']);
+        $protected = HttpClient::protectedUrl($url, $state['base'], $state['login_path'] ?? null);
         $state['rows'][$url] = ['url' => $url, 'source' => $source, 'method' => $method, 'candidate' => $guessed,
             'http' => 0, 'original_http' => 0, 'final_url' => '', 'mime' => '', 'issue' => false, 'tags' => $tags,
             'access' => '未確認', 'kind' => Discovery::kind($url), 'status' => $protected ? '管理・内部領域のため取得対象外' : (str_contains($url, '?') ? 'クエリ付きのため取得対象外' : '未取得')];

@@ -58,6 +58,29 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
         if(step.json.data.rows.some(row=>row.status.includes('内部'))) break;
       }
       check(step.json.ok && step.json.data.requests===0 && step.json.data.rows.some(row=>row.status.includes('内部')),'crawler refuses private IP before HTTP');
+
+      const collectLoginUrl = async (loginPath, label) => {
+        const expected = JSON.stringify(origin + loginPath);
+        const loginRows = 'Array.from(document.querySelectorAll("[data-crawl-table] tbody tr")).filter(row => row.cells[2].textContent === "CMS設定（ログイン）")';
+        await evaluate('document.querySelector("[data-crawl-start]").click()');
+        await waitFor('document.querySelector("[data-crawl-status]").textContent.includes("完了") && '
+          + loginRows + '.some(row => row.cells[0].textContent === ' + expected + ')');
+        check(await evaluate('(' + loginRows + ').length === 1 && (' + loginRows + ')[0].cells[5].textContent === "—"'), label);
+      };
+      const setLoginUrl = async (slug, enabled) => {
+        check(await evaluate('(async () => {'
+          + 'const data = new URLSearchParams({_csrf_token:document.querySelector("[data-nxmt]").dataset.csrf,slug:' + JSON.stringify(slug) + '});'
+          + (enabled ? 'data.set("enabled","1");' : '')
+          + 'const response = await fetch("/admin/extensions/access-guard/settings/login-url",{method:"POST",body:data});'
+          + 'return response.ok && (await response.text()).includes("ログインページ変更設定を保存しました");})()'), 'Access Guard saved login settings');
+      };
+      await collectLoginUrl('/admin/login','the initial inventory lists the standard login URL without an HTTP result');
+      await setLoginUrl('inventory-login-test', true);
+      await collectLoginUrl('/inventory-login-test','recollect reflects the changed login URL');
+      await setLoginUrl('inventory-login-next', true);
+      await collectLoginUrl('/inventory-login-next','recollect replaces the previous login URL');
+      await setLoginUrl('inventory-login-next', false);
+      await collectLoginUrl('/admin/login','turning off the URL change restores the standard login URL');
     }
     check((await api('site_urls',{op:'list',run:'../escape'})).status===400,'invalid run ID rejected');
     check(await evaluate('document.querySelectorAll("[data-crawl-table] th").length===9&&!!document.querySelector("[data-crawl-type]")'),'crawler classifications and redirect columns');

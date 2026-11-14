@@ -32,6 +32,14 @@ for name in ['assets','includes']:
     shutil.copytree(classic/name,site/'extensions/classic-editor'/name,dirs_exist_ok=True)
 for name in ['bootstrap.php','manifest.json']:
     shutil.copyfile(classic/name,site/'extensions/classic-editor'/name)
+guard = root.parent / 'nexapress-access-guard'
+for name in ['includes', 'admin']:
+    shutil.copytree(guard / name, site / 'extensions/access-guard' / name, dirs_exist_ok=True)
+for name in ['bootstrap.php', 'manifest.json']:
+    shutil.copyfile(guard / name, site / 'extensions/access-guard' / name)
+guard_settings = site / 'storage/extensions/access-guard/settings.json'
+if guard_settings.exists():
+    guard_settings.unlink()
 sitemap=Path(os.environ.get('NXMT_SITEMAP_SOURCE', str(root.parent/'nx_XML_HTML_sitemap')))
 for name in ['assets','src','admin','config','routes','views']:
     shutil.copytree(sitemap/name,site/'extensions/nx_XML_HTML_sitemap'/name,dirs_exist_ok=True)
@@ -57,6 +65,7 @@ CREATE TABLE test_media(id INTEGER PRIMARY KEY,file_path TEXT,title TEXT,descrip
 CREATE TABLE test_extension_settings(extension_key TEXT PRIMARY KEY,is_enabled INTEGER);
 INSERT INTO test_extension_settings VALUES('nx_Multi_tool',1);
 INSERT INTO test_extension_settings VALUES('classic-editor',1);
+INSERT INTO test_extension_settings VALUES('access-guard',1);
 INSERT INTO test_extension_settings VALUES('nx_XML_HTML_sitemap',1);
 CREATE TABLE test_navigation_items(id INTEGER PRIMARY KEY,label TEXT,url TEXT,reference_id INTEGER,type TEXT,position INTEGER);
 ''')

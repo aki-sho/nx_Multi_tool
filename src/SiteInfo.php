@@ -3,6 +3,15 @@ namespace NxMultiTool;
 
 final class SiteInfo
 {
+    public static function loginPath(): string
+    {
+        if (class_exists(\NexaPressAccessGuard\LoginUrl::class, false)) {
+            return \NexaPressAccessGuard\LoginUrl::path();
+        }
+
+        return '/admin/login';
+    }
+
     public static function publicUrl(): ?string
     {
         $host = (string)($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '');

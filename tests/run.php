@@ -62,6 +62,12 @@ $_SERVER['HTTPS'] = 'on';
 $_SERVER['HTTP_X_FORWARDED_HOST'] = 'forwarded.example.test';
 $crawl=\NxMultiTool\Crawler::start();
 check(count(array_filter($crawl['rows'], static fn($row) => $row['method'] === '開始URL' && $row['url'] === 'https://current.example.test/')) === 1, 'crawler starts from the current CMS even with a legacy URL stored');
+// The standard login route is known to the CMS even on a site without any links to it.
+$loginUrl = 'https://current.example.test' . url('admin/login');
+$loginRows = array_values(array_filter($crawl['rows'], static fn($row) => $row['url'] === $loginUrl));
+check(count($loginRows) === 1 && $loginRows[0]['method'] === 'CMS設定（ログイン）'
+    && $loginRows[0]['http'] === 0 && $loginRows[0]['access'] === '未確認', 'standard login URL is listed without an HTTP result');
+check(!in_array($loginUrl, Storage::read('crawl-1-' . $crawl['run'])['queue'], true), 'standard login URL is not queued for crawling');
 check(!isset(Settings::all()['site_url']) && Settings::all()['comments_open'], 'legacy URL ignored while other settings are read normally');
 check(count(array_filter($crawl['rows'],static fn($row)=>str_ends_with($row['url'],'/featured-only.png')&&$row['method']==='アイキャッチ'))===1,'CMS featured media reference collected');
 check(count(array_filter($crawl['rows'],static fn($row)=>str_ends_with($row['url'],'/sitemap.xml')&&$row['candidate']===true))===1,'guessed sitemap identified separately');

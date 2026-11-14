@@ -73,7 +73,7 @@ final class HttpClient
         }
         return $root['scheme'] . '://' . $root['host'] . (isset($root['port']) ? ':' . $root['port'] : '') . $path . $query;
     }
-    public static function protectedUrl(string $url, string $base): bool
+    public static function protectedUrl(string $url, string $base, ?string $loginPath = null): bool
     {
         $prefix = rtrim((string)parse_url($base, PHP_URL_PATH), '/');
         $path = (string)parse_url($url, PHP_URL_PATH);
@@ -81,7 +81,13 @@ final class HttpClient
         $path = self::path($path);
         if ($prefix !== '' && $path !== $prefix && !str_starts_with($path, $prefix . '/')) { return true; }
         $relative = substr($path, strlen($prefix));
-        return (bool)preg_match('#^/(?:public/)?(?:admin|install|nx-multi-tool|app|config|database|storage|extensions|tests|update-package|dist|vendor|node_modules)(?:/|$)|(?:^|/)\.#i', $relative);
+        if (preg_match('#^/(?:public/)?(?:admin|install|nx-multi-tool|app|config|database|storage|extensions|tests|update-package|dist|vendor|node_modules)(?:/|$)|(?:^|/)\.#i', $relative)) {
+            return true;
+        }
+
+        $loginPath ??= SiteInfo::loginPath();
+        $relative = rtrim($relative, '/');
+        return $relative === $loginPath || $relative === '/public' . $loginPath;
     }
     public static function fetch(string $url, string $base, bool $head = false, int $redirects = 0, bool $range = false, int &$requests = 0, array $history = []): array
     {

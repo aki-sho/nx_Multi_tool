@@ -69,5 +69,13 @@ namespace {
     $urls=array_column($refs,'url');expect(in_array('one.png',$urls)&&in_array('two.png',$urls)&&in_array('poster.png',$urls)&&in_array('extra.css',$urls),'srcset poster and inline style discovery');
     expect(Discovery::css('@import "first.css"; @import url("second.css"); a{background:url(img.png)}')===['first.css','second.css','img.png'],'all CSS import forms');
     expect(Discovery::json('{"url":"https:\/\/example.test\/image.png"}')===['https://example.test/image.png'],'escaped JSON reference');
+    foreach (['JsonStorage', 'Settings', 'LoginUrl'] as $class) {
+        require_once BASE_PATH . '/extensions/access-guard/includes/' . $class . '.php';
+    }
+    $loginSettings = ['enabled' => true, 'slug' => 'inventory-login-test'];
+    \NexaPressAccessGuard\Settings::saveSection('login_url', $loginSettings);
+    $response = fetchCase([['status'=>302, 'headers'=>['Location'=>'/inventory-login-test']]]);
+    expect($response['blocked'] && count($GLOBALS['nxmt_http_calls']) === 1, 'redirect to the current custom login URL is not followed');
+    \NexaPressAccessGuard\Settings::saveSection('login_url', array_replace($loginSettings, ['enabled'=>false]));
     echo "HTTP and URL-discovery checks: $checks passed\n";
 }
