@@ -8,8 +8,11 @@ final class HttpClient
         $p = parse_url($url);
         if (!is_array($p) || !in_array(strtolower($p['scheme'] ?? ''), ['http', 'https'], true)
             || empty($p['host']) || isset($p['user']) || isset($p['pass']) || isset($p['query']) || isset($p['fragment'])
-            || preg_match('/[\x00-\x20\x7f\\\\]/', $url) || isset($p['port']) && !in_array($p['port'], [80, 443], true)) {
-            throw new \InvalidArgumentException('公開HTTP/HTTPSのサイトURLを指定してください。認証情報・クエリ・特殊ポートは指定できません。');
+            || preg_match('/[\x00-\x20\x7f\\\\]/', $url)) {
+            throw new \InvalidArgumentException('公開HTTP/HTTPSのサイトURLを確認できません。');
+        }
+        if (isset($p['port']) && !in_array($p['port'], [80, 443], true)) {
+            throw new \InvalidArgumentException('URL収集はポート80と443に対応しています。');
         }
         return strtolower($p['scheme']) . '://' . strtolower($p['host']) . (isset($p['port']) ? ':' . $p['port'] : '') . rtrim(self::path($p['path'] ?? '/'), '/');
     }
@@ -97,7 +100,7 @@ final class HttpClient
         curl_setopt_array($ch, [CURLOPT_FOLLOWLOCATION => false, CURLOPT_CONNECTTIMEOUT => 3, CURLOPT_TIMEOUT => 8,
             CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS, CURLOPT_PROXY => '', CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2, CURLOPT_RESOLVE => [$host . ':' . $port . ':' . (str_contains($ips[0], ':') ? '[' . $ips[0] . ']' : $ips[0])],
-            CURLOPT_USERAGENT => 'NX-Multi-Tool/1.0.1 (+site administrator initiated)', CURLOPT_NOBODY => $head,
+            CURLOPT_USERAGENT => 'NX-Multi-Tool/' . Registry::VERSION . ' (+site administrator initiated)', CURLOPT_NOBODY => $head,
             CURLOPT_HEADERFUNCTION => static function ($handle, string $line) use (&$headers) {
                 if (preg_match('#^HTTP/#i', $line)) { $headers = []; }
                 if (str_contains($line, ':')) { [$key, $value] = explode(':', $line, 2); $headers[strtolower(trim($key))] = substr(trim($value), 0, 4096); }

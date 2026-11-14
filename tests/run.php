@@ -42,7 +42,7 @@ check(Monitor::normalizeIp('::ffff:192.0.2.10')==='192.0.2.10','mapped normaliza
 rejects(fn()=>Monitor::block('192.0.2.50',false),'self block protection');Monitor::block('192.0.2.20',false);check(Monitor::blocked('192.0.2.20'),'IP blocking');Monitor::block('192.0.2.20',true);check(!Monitor::blocked('192.0.2.20'),'IP unblock');
 $page=Content::rows(['type'=>'post']);check($page['total']===2,'content rows');$metric=Content::metrics($page['rows'][1],'post');check($metric[7]==='あり'&&$metric[8]===1&&$metric[9]===1,'content metrics');
 $scan=Inspector::scan(['patterns'=>'old.example.com','types'=>['a'],'distance'=>'0']);check(count($scan['rows'])===2,'link inspector finds both posts');
-$settingsInput=['tools'=>array_keys(NxMultiTool\Registry::all()),'site_url'=>'https://example.com','comments_open'=>'1'];Settings::save($settingsInput);
+$settingsInput=['tools'=>array_keys(NxMultiTool\Registry::all()),'comments_open'=>'1'];Settings::save($settingsInput);
 $id=Comments::submit('post',1,['name'=>'<script>alert(1)</script>','email'=>'user@example.test','body'=>'本文<script>test</script>'],'192.0.2.30');
 check(Comments::list([])['rows'][0]['status']==='pending','new comment moderated');Comments::act('approved',[$id]);check(Comments::list(['status'=>'approved'])['total']===1,'approve');
 rejects(fn()=>Comments::submit('post',2,['name'=>'Test','body'=>'draft'],'192.0.2.30'),'reject draft comments');
@@ -54,10 +54,20 @@ Monitor::record('/post/hello');check(Monitor::logs([])['total']===1,'access logg
 check(count(NxMultiTool\Security::inspect()['items'])===10,'10 security checks');
 Settings::save(['tools'=>['qr']]);check(!Settings::enabled('password')&&Settings::enabled('qr'),'per-tool disable state');
 // Reset fixture data for browser tests, preserving extension-owned tables.
-Database::query('DELETE FROM '.Database::table('logs'));Settings::save(['tools'=>array_keys(NxMultiTool\Registry::all()),'site_url'=>'https://127.0.0.1','comments_open'=>'1']);
+Database::query('DELETE FROM '.Database::table('logs'));Settings::save($settingsInput);
 $_SESSION=['user'=>['id'=>1,'role'=>'administrator']];
+Storage::transaction('settings', static fn($saved) => [array_replace($saved, ['site_url'=>'https://old.example.test']), null]);
+$_SERVER['HTTP_HOST'] = 'current.example.test';
+$_SERVER['HTTPS'] = 'on';
+$_SERVER['HTTP_X_FORWARDED_HOST'] = 'forwarded.example.test';
 $crawl=\NxMultiTool\Crawler::start();
+check(count(array_filter($crawl['rows'], static fn($row) => $row['method'] === '開始URL' && $row['url'] === 'https://current.example.test/')) === 1, 'crawler starts from the current CMS even with a legacy URL stored');
+check(!isset(Settings::all()['site_url']) && Settings::all()['comments_open'], 'legacy URL ignored while other settings are read normally');
 check(count(array_filter($crawl['rows'],static fn($row)=>str_ends_with($row['url'],'/featured-only.png')&&$row['method']==='アイキャッチ'))===1,'CMS featured media reference collected');
 check(count(array_filter($crawl['rows'],static fn($row)=>str_ends_with($row['url'],'/sitemap.xml')&&$row['candidate']===true))===1,'guessed sitemap identified separately');
+$_SERVER['HTTP_HOST'] = 'moved.example.test';
+rejects(fn() => \NxMultiTool\Crawler::step($crawl['run']), 'a crawl from the former host cannot resume');
 \NxMultiTool\Crawler::clear($crawl['run']);
+Settings::save($settingsInput + ['site_url' => 'https://posted.example.test']);
+check(!isset(Storage::read('settings')['site_url']), 'settings form cannot change the crawl destination');
 echo "PHP regression checks: $checks passed\n";

@@ -22,16 +22,23 @@ namespace NxMultiTool {
     function curl_close($handle){}
 }
 namespace {
+    putenv('NXMT_TEST_BASE_PATH=/blog/public');
     require __DIR__.'/fixture.php';
     use NxMultiTool\HttpClient;
     use NxMultiTool\ResponseClassifier;
     use NxMultiTool\Discovery;
+    use NxMultiTool\SiteInfo;
     $checks=0;
     function expect(bool $ok,string $label):void {global $checks;$checks++;if(!$ok)throw new \RuntimeException('FAIL '.$label);}
     function fetchCase(array $responses,bool $head=false,string $url='https://example.test/asset'):array {
         $GLOBALS['nxmt_http_responses']=$responses;$GLOBALS['nxmt_http_calls']=[];$requests=0;
         return HttpClient::fetch($url,'https://example.test',$head,0,false,$requests);
     }
+    $_SERVER['HTTP_HOST'] = 'instance.example.test';
+    $_SERVER['REQUEST_SCHEME'] = 'https';
+    expect(SiteInfo::publicUrl() === 'https://instance.example.test/blog/', 'CMS root URL retains its installation directory');
+    $_SERVER['HTTP_HOST'] = 'instance.example.test/invalid';
+    expect(SiteInfo::publicUrl() === null, 'malformed host cannot become a crawl URL');
     $response=fetchCase([['status'=>200,'headers'=>['Content-Type'=>'text/css'],'body'=>'body{}']]);
     $classified=ResponseClassifier::classify($response);
     expect($classified['kind']==='css'&&$classified['access']==='公開ファイルとして取得可','public CSS is expected');

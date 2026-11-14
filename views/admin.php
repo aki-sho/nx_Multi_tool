@@ -11,13 +11,19 @@ $groups = ['content' => 'コンテンツ', 'management' => 'サイト管理', 'u
     <?php if ($error !== ''): ?><p class="nxmt-notice is-error" role="alert"><?= e($error) ?></p><?php else: ?>
     <main class="nxmt-body">
     <?php if ($tool === ''): ?>
+        <section class="nxmt-panel" aria-labelledby="nxmt-site-info-heading">
+            <h2 id="nxmt-site-info-heading">共通情報</h2>
+            <dl class="nxmt-fields nxmt-site-info">
+                <div><dt>サイト名</dt><dd><?= e(site_title()) ?></dd></div>
+                <div><dt>公開サイトURL</dt><dd><?php if ($siteUrl !== null): ?><a href="<?= e($siteUrl) ?>"><?= e($siteUrl) ?></a><?php else: ?>取得できません<?php endif; ?></dd></div>
+            </dl>
+        </section>
         <form method="post" action="<?= e(Registry::endpoint('settings')) ?>" class="nxmt-settings">
             <input type="hidden" name="_csrf_token" value="<?= e(Csrf::token()) ?>">
             <div class="nxmt-section-heading"><h2>使うツールを選ぶ</h2><p>オフにしたツールの画面と専用処理は読み込みません。</p></div>
             <?php foreach ($groups as $group => $label): ?><h3><?= e($label) ?></h3><div class="nxmt-cards"><?php foreach ($registry as $id => $definition): ?><?php if ($definition[2] === $group): ?><section class="nxmt-card"><label class="nxmt-switch"><input type="checkbox" name="tools[]" value="<?= e($id) ?>" <?= $settings['tools'][$id] ? 'checked' : '' ?>><span><?= e($definition[0]) ?></span></label><p><?= e($definition[1]) ?></p><?php if ($settings['tools'][$id]): ?><a href="<?= e(Registry::url($id)) ?>">ツールを開く →</a><?php else: ?><span class="nxmt-muted">無効</span><?php endif; ?></section><?php endif; ?><?php endforeach; ?></div><?php endforeach; ?>
             <section class="nxmt-panel"><h2>共通設定</h2><div class="nxmt-fields">
                 <label>文字サイズ<select name="font_size"><?php foreach ([1 => '小', 2 => 'やや小', 3 => '標準', 4 => 'やや大', 5 => '大'] as $value => $label): ?><option value="<?= $value ?>" <?= $settings['font_size'] == $value ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?></select></label>
-                <label class="nxmt-wide">公開サイトURL<input type="url" name="site_url" value="<?= e($settings['site_url']) ?>" placeholder="https://example.com/blog" maxlength="2048"><small>サイト内URL収集の起点。設置先のパスまで指定します。</small></label>
                 <label>ログ保持日数<input type="number" name="log_days" min="1" max="365" value="<?= (int)$settings['log_days'] ?>"></label>
                 <label>ログ保存上限<input type="number" name="log_max" min="100" max="100000" value="<?= (int)$settings['log_max'] ?>"></label>
                 <label>ログ記録上限／分<input type="number" name="log_per_minute" min="1" max="600" value="<?= (int)$settings['log_per_minute'] ?>"></label>

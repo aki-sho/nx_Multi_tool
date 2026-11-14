@@ -5,11 +5,12 @@ final class AdminController
 {
     public static function dashboard(): void
     {
-        $tool = ''; $error = ''; $data = [];
+        $tool = ''; $error = ''; $data = []; $siteUrl = null;
         try {
             $tool = Access::text($_GET, 'tool', 40);
             if ($tool !== '') { Access::requireTool($tool); }
             $settings = Settings::all();
+            if ($tool === '' || $tool === 'site_urls') { $siteUrl = SiteInfo::publicUrl(); }
             $page = Access::integer($_GET, 'page', 1, 100000, 1);
             if ($tool === 'post_data') {
                 $data = Content::rows(self::contentFilter($_GET), 50, ($page - 1) * 50);

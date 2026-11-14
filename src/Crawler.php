@@ -8,10 +8,15 @@ final class Crawler
         if (!preg_match('/^[a-f0-9]{32}$/D', $run)) { throw new \InvalidArgumentException('収集IDが不正です。'); }
         return 'crawl-' . (int)(\app\Core\Auth::user()['id'] ?? 0) . '-' . $run;
     }
+    private static function base(): string
+    {
+        $siteUrl = SiteInfo::publicUrl();
+        if ($siteUrl === null) { throw new \RuntimeException('現在のCMSの公開サイトURLを確認できません。'); }
+        return HttpClient::base($siteUrl);
+    }
     public static function start(): array
     {
-        $base = Settings::all()['site_url'];
-        if ($base === '') { throw new \RuntimeException('ダッシュボードで公開サイトURLを設定してください。'); }
+        $base = self::base();
         foreach (glob(Storage::directory() . '/crawl-*.json') ?: [] as $path) {
             if (preg_match('/^crawl-[0-9]+-[a-f0-9]{32}\.json$/D', basename($path)) && filemtime($path) < time() - 3600) { Storage::delete(basename($path, '.json')); }
         }
@@ -113,6 +118,7 @@ final class Crawler
     private static function valid(array $state): void
     {
         if (!isset($state['run'], $state['created']) || time() - $state['created'] > 3600) { throw new \RuntimeException('収集結果が期限切れです。再収集してください。'); }
+        if (($state['base'] ?? '') !== self::base()) { throw new \RuntimeException('収集先が変わりました。再収集してください。'); }
     }
     public static function read(string $run): array { $state = Storage::read(self::key($run)); self::valid($state); return self::response($state); }
     public static function clear(string $run): void { Storage::delete(self::key($run)); }

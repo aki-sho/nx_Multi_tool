@@ -1,6 +1,6 @@
 <?php
 define('BASE_PATH', getenv('NXMT_TEST_SITE') ?: __DIR__ . '/.runtime/site');
-define('BASE_URL', '');
+define('BASE_URL', getenv('NXMT_TEST_BASE_PATH') ?: '');
 date_default_timezone_set('Asia/Tokyo');
 require __DIR__ . '/FixtureDatabase.php';
 spl_autoload_register(static function ($class): void {

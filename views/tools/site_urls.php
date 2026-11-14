@@ -1,5 +1,6 @@
 <section class="nxmt-panel" data-nxmt-crawler>
     <h2>公開サイトのURLを収集</h2><p>投稿・固定ページ以外の参照先を表示します。CSS・画像などの公開ファイルを取得できることは通常の動作です。</p>
+    <p>収集先 <?php if ($siteUrl !== null): ?><a data-crawl-site href="<?= e($siteUrl) ?>"><?= e($siteUrl) ?></a><?php else: ?>公開サイトURLを確認できません<?php endif; ?></p>
     <div class="nxmt-inline"><button type="button" data-crawl-start>収集開始・再収集</button><button type="button" class="secondary" data-crawl-pause>一時停止</button><button type="button" class="secondary" data-crawl-resume>再開</button><button type="button" class="secondary" data-crawl-csv>表示結果をCSV出力</button></div>
     <p role="status" data-crawl-status>未開始</p>
     <div class="nxmt-fields"><label>検索<input type="search" data-crawl-search placeholder="URL・発見元"></label>

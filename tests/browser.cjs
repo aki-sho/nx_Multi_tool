@@ -30,6 +30,7 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
     await command('Page.enable');await command('Runtime.enable');
     await command('Emulation.setDeviceMetricsOverride',{width:1366,height:1000,deviceScaleFactor:1,mobile:false});
     await go('/fixture/login');check(await evaluate('document.querySelectorAll(".nxmt-card input[type=checkbox]").length===13'),'dashboard tool switches');
+    check(await evaluate('!document.querySelector("input[name=site_url]") && document.querySelector(".nxmt-site-info").textContent.includes("サイト名") && document.querySelector(".nxmt-site-info a").href === location.origin + "/"'),'dashboard shows CMS site information without a URL input');
     const tools=['site_links','qr','calc','bcrypt','password','timer','link_inspector','access_log','security_check','post_data','site_urls','search_replace','comment_manager'];
     for(const tool of tools){await go('/admin/extensions/nx_Multi_tool/dashboard?tool='+tool);check(await evaluate('!!document.querySelector("[data-nxmt]")&&!document.querySelector(".nxmt-notice.is-error")'),'render '+tool);}
     await go('/admin/extensions/nx_Multi_tool/dashboard?tool=password');
@@ -43,7 +44,22 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
     await go('/admin/extensions/nx_Multi_tool/dashboard?tool=site_links');await evaluate(`const input=document.querySelector('[data-link-search]');input.value='配色';input.dispatchEvent(new Event('input'));`);check(await evaluate('document.querySelectorAll("[data-link-item]:not([hidden])").length>0&&document.querySelectorAll("[data-link-item][hidden]").length>0'),'catalog filtering');
     await go('/admin/extensions/nx_Multi_tool/dashboard?tool=post_data');check(await evaluate('document.querySelectorAll("[data-post-table] tbody tr").length===2'),'post data core model');
     const csv = await evaluate(`(async()=>{const response=await fetch(document.querySelector('[data-post-csv]').href);return {status:response.status,type:response.headers.get('content-type'),text:await response.text()}})()`);check(csv.status===200&&csv.type.includes('csv')&&csv.text.includes('日本語テスト記事'),'post CSV');
-    await go('/admin/extensions/nx_Multi_tool/dashboard?tool=site_urls');const crawl=await api('site_urls',{op:'start'});check(crawl.json.ok,'crawler start');let step;for(let i=0;i<3;i++){step=await api('site_urls',{op:'step',run:crawl.json.data.run});if(step.json.data.rows.some(row=>row.status.includes('内部')))break;}check(step.json.ok&&step.json.data.rows.some(row=>row.status.includes('内部')),'crawler blocks private IP without network');check((await api('site_urls',{op:'list',run:'../escape'})).status===400,'crawler ID traversal rejected');
+    await go('/admin/extensions/nx_Multi_tool/dashboard?tool=site_urls');
+    check(await evaluate('document.querySelector("[data-crawl-site]").href === location.origin + "/"'),'URL list shows the same destination as the dashboard');
+    const crawl=await api('site_urls',{op:'start',site_url:'https://different.example.test/'});
+    const {origin, port} = new URL(base);
+    if (port) {
+      check(crawl.status===400 && crawl.json.error.includes('ポート80'),'unsupported ports are reported before crawling');
+    } else {
+      check(crawl.json.ok && crawl.json.data.rows.some(row=>row.method==='開始URL' && row.url===origin+'/'),'crawler uses the current CMS address');
+      let step;
+      for(let i=0;i<3;i++) {
+        step=await api('site_urls',{op:'step',run:crawl.json.data.run});
+        if(step.json.data.rows.some(row=>row.status.includes('内部'))) break;
+      }
+      check(step.json.ok && step.json.data.requests===0 && step.json.data.rows.some(row=>row.status.includes('内部')),'crawler refuses private IP before HTTP');
+    }
+    check((await api('site_urls',{op:'list',run:'../escape'})).status===400,'invalid run ID rejected');
     check(await evaluate('document.querySelectorAll("[data-crawl-table] th").length===9&&!!document.querySelector("[data-crawl-type]")'),'crawler classifications and redirect columns');
     await go('/admin/posts/edit/1');await waitFor('!!document.querySelector("[data-nxmt-editor]")');
     check(await evaluate('!!document.querySelector(".classic-editor-content")'),'real Classic Editor active');
