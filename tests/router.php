@@ -24,6 +24,7 @@ if (str_starts_with($path, '/public/')) {
     }
 }
 $router = new \app\Core\Router();
+$router->get('/', \app\Controllers\HomeController::class . '@index');
 $router->get('/admin/extensions/{extensionKey}/dashboard', \app\Controllers\Admin\ExtensionController::class . '@dashboard');
 $router->get('/admin/posts/edit/{id}', \app\Controllers\Admin\PostController::class . '@edit');
 $router->get('/admin/posts/create', \app\Controllers\Admin\PostController::class . '@create');

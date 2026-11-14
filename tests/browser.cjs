@@ -65,6 +65,40 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
     check(await evaluate(`document.querySelector('[data-security-group="5"]').hidden
       && !document.querySelector('[data-security-group="9"]').hidden
       && document.querySelector('[data-security-group="9"] [data-security-row="unknown"]').hidden`), 'state filter hides unconfirmed categories and rows');
+    check((await api('security_check', {op:'apply_header', header:'referrer'}, false)).status === 419, 'header settings require CSRF');
+    check((await api('security_check', {op:'apply_header', header:'hsts'})).status === 400, 'HSTS needs an HTTPS connection');
+    check((await api('security_check', {op:'apply_header', header:'cookie'})).status === 400, 'supplement rows do not write unrelated headers');
+    const readHeader = (route, name) => evaluate(`fetch(${JSON.stringify(route)}, {cache:'no-store'}).then(response => response.headers.get(${JSON.stringify(name)}))`);
+    check(await readHeader('/', 'Referrer-Policy') === null, 'header does not change until opted in');
+    await evaluate(`document.querySelector('[data-security-filter]').value='all';
+      document.querySelector('[data-security-filter]').dispatchEvent(new Event('change', {bubbles:true}));
+      document.querySelector('[data-security-tab="headers"]').click();
+      const row = document.querySelector('[data-security-header="referrer"]');
+      row.open = true; row.querySelector('[data-header-settings]').open = true;
+      row.querySelector('select').value = 'strict-origin';
+      row.querySelector('select').dispatchEvent(new Event('input', {bubbles:true}));`);
+    check(await evaluate(`document.querySelector('[data-security-header="referrer"] [data-header-preview]').textContent === 'Referrer-Policy: strict-origin'`), 'live preview shows the exact header');
+    await evaluate(`document.querySelector('[data-security-header="referrer"] button[value="apply_header"]').click(); void 0`);
+    await waitFor(`Array.from(document.querySelectorAll('[data-header-status]')).some(row => row.textContent.includes('設定を保存しました'))`);
+    for (const route of ['/', '/post/hello', '/page/about']) {
+      check(await readHeader(route, 'Referrer-Policy') === 'strict-origin', 'saved header reaches ' + route);
+    }
+    check(await readHeader('/admin/extensions/nx_Multi_tool/dashboard', 'Referrer-Policy') === null, 'header leaves CMS administration alone');
+    check(await readHeader('/nx-multi-tool/comments/post/1', 'Referrer-Policy') === 'no-referrer', 'comment page keeps its existing policy');
+    check(await readHeader('/public/themes/default/style.css', 'Referrer-Policy') === null, 'header setting applies to HTML responses');
+    check(await readHeader('/does-not-exist', 'Referrer-Policy') === null, 'header settings skip error responses');
+    check(await evaluate(`document.querySelector('[data-security-header="referrer"] [data-header-settings]').open
+      && document.querySelector('[data-security-score]').textContent === '未採点'`), 'saved state is distinct from the observed score');
+    await evaluate(`document.querySelector('[data-security-header="referrer"] button[value="remove_header"]').click(); void 0`);
+    await waitFor(`Array.from(document.querySelectorAll('[data-header-status]')).some(row => row.textContent.includes('設定を解除しました'))`);
+    check(await readHeader('/', 'Referrer-Policy') === null, 'clear a single header through the settings form');
+    const csp = await api('security_check', {op:'apply_header',header:'csp'});
+    check(csp.status === 200 && await readHeader('/', 'Content-Security-Policy-Report-Only') === "default-src 'self'"
+      && await readHeader('/', 'Content-Security-Policy') === null, 'default CSP mode sends a report-only policy');
+    const enforcing = await api('security_check', {op:'apply_header',header:'csp',mode:'enforce',value:"frame-ancestors 'self'"});
+    check(enforcing.status === 200 && await readHeader('/', 'Content-Security-Policy') === "frame-ancestors 'self'"
+      && await readHeader('/', 'Content-Security-Policy-Report-Only') === null, 'explicit CSP mode replaces the plugin’s previous policy');
+    check((await api('security_check', {op:'remove_header',header:'csp'})).status === 200, 'remove CSP from test site');
     await go('/admin/extensions/nx_Multi_tool/dashboard?tool=password');
     await evaluate(`document.querySelector('[data-password-preset]').value='strong';document.querySelector('[data-password-preset]').dispatchEvent(new Event('change'));document.querySelector('[data-nxmt-api] button[type=submit]').click()`);
     await waitFor('document.querySelector("[data-api-output]").value.length>0');

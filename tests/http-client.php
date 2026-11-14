@@ -111,6 +111,18 @@ namespace {
         && !str_contains(json_encode($GLOBALS['nxmt_http_calls'][0]->options, JSON_PARTIAL_OUTPUT_ON_ERROR), 'fixture-admin-'),
         'public header check fetches only this site and never sends credentials');
     expect($public['supplement']['cors']['state'] === 'unknown', 'ordinary public GET cannot determine origin-specific CORS rules');
+    $GLOBALS['nxmt_http_responses'] = [[
+        'status' => 200,
+        'headers' => $headerBag + ['Content-Type' => 'text/html; charset=UTF-8'],
+        'body' => '<html><h1>Public fixture</h1></html>',
+    ]];
+    $public = SecurityHeaders::inspect($siteUrl, true, [
+        'hsts' => ['value' => 'max-age=300', 'mode' => 'enforce'],
+        'nosniff' => ['value' => 'nosniff', 'mode' => 'enforce'],
+        'csp' => ['value' => "default-src 'self'", 'mode' => 'report'],
+    ]);
+    expect(str_contains($public['observed']['hsts'], '異なります') && str_contains($public['observed']['nosniff'], '確認しました。')
+        && str_contains($public['observed']['csp'], '送信を確認できません'), 'public observations distinguish matching, different, and missing settings');
     $headersOnly = SecurityHeaders::evaluate(array_intersect_key($headerBag, array_flip(['strict-transport-security', 'content-security-policy'])), true, session_name());
     expect($headersOnly['score'] === 75 && $headersOnly['rows']['frame']['points'] === 20, 'CSP frame-ancestors earns embedding points without an XFO field');
     $limited = SecurityHeaders::evaluate([

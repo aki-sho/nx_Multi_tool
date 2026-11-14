@@ -13,6 +13,8 @@ final class Extension
         $router->get('/nx-multi-tool/assets/{asset}', AssetController::class . '@show');
         $router->get('/nx-multi-tool/comments/{type}/{id}', Comments::class . '@publicPage');
         $router->post('/nx-multi-tool/comments/{type}/{id}', Comments::class . '@publicPage');
+        try { PublicHeaders::boot(); }
+        catch (\Throwable $e) { error_log('[NX Multi Tool] 公開ヘッダーの初期化失敗: ' . get_class($e)); }
         try {
             if (Settings::enabled('access_log') || Settings::enabled('comment_manager')) { Monitor::boot(); }
             \add_action('admin_head', static function (): void {

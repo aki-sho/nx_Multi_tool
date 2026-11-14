@@ -40,14 +40,18 @@ final class AdminController
             if ($tool === 'password') { Access::json(['ok' => true, 'data' => Utility::passwords($_POST)]); return; }
             if ($tool === 'bcrypt') { Access::json(['ok' => true, 'data' => Utility::bcrypt($_POST)]); return; }
             if ($tool === 'link_inspector') { Access::json(['ok' => true, 'data' => Inspector::scan($_POST, Access::integer($_POST, 'offset', 0, 1000000, 0))]); return; }
-            if ($tool === 'security_check' && $op === 'inspect') {
+            if ($tool === 'security_check' && in_array($op, ['inspect', 'apply_header', 'remove_header'], true)) {
                 $selected = $_POST['sources'] ?? [];
                 if (!is_array($selected)) { throw new \InvalidArgumentException('読み取り元を確認してください。'); }
                 $sources = [];
-                foreach (Security::SOURCES as $source => $label) {
+                foreach (array_keys(Security::SOURCES) as $source) {
                     $sources[$source] = in_array($source, $selected, true);
                 }
-                $data = Security::inspect($sources);
+                if ($op !== 'inspect') {
+                    $id = Access::text($_POST, 'header', 20);
+                    PublicHeaders::set($id, $op === 'apply_header' ? $_POST : null);
+                }
+                $data = Security::inspect($sources, $op !== 'inspect');
                 ob_start();
                 try {
                     require dirname(__DIR__) . '/views/partials/security-results.php';

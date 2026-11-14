@@ -63,6 +63,17 @@ $security = \NxMultiTool\Security::inspect([]);
 foreach ($security['items'] as $item) {
     check(array_unique(array_column($item['rows'], 'state')) === ['unknown'], 'excluded sources are unconfirmed for group ' . $item['number']);
 }
+check(\NxMultiTool\PublicHeaders::settings() === [], 'public headers start off when upgrading');
+\NxMultiTool\PublicHeaders::set('permissions', ['features' => ['geolocation', 'camera']]);
+\NxMultiTool\PublicHeaders::set('csp', ['mode' => 'report', 'value' => "default-src 'self'; style-src 'self'"]);
+rejects(fn() => \NxMultiTool\PublicHeaders::set('csp', ['value' => "default-src 'self'\n"]), 'CSP must occupy one header line');
+rejects(fn() => \NxMultiTool\PublicHeaders::set('permissions', ['features' => []]), 'permissions must include a selected feature');
+$publicHeaders = \NxMultiTool\PublicHeaders::settings();
+check($publicHeaders['csp']['value'] === "default-src 'self'; style-src 'self'" && $publicHeaders['csp']['mode'] === 'report'
+    && $publicHeaders['permissions']['value'] === 'camera=(), geolocation=()', 'configured features and CSP are persisted');
+\NxMultiTool\PublicHeaders::set('csp', null);
+check(array_keys(\NxMultiTool\PublicHeaders::settings()) === ['permissions'], 'removing one setting preserves other headers');
+\NxMultiTool\PublicHeaders::set('permissions', null);
 Settings::save(['tools'=>['qr']]);check(!Settings::enabled('password')&&Settings::enabled('qr'),'per-tool disable state');
 // Reset fixture data for browser tests, preserving extension-owned tables.
 Database::query('DELETE FROM '.Database::table('logs'));Settings::save($settingsInput);

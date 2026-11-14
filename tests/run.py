@@ -51,7 +51,7 @@ db_path=site/'fixture.sqlite'
 if db_path.exists(): db_path.unlink()
 schema_path=site/'storage/extensions/nx_Multi_tool/schema.json'
 if schema_path.exists(): schema_path.unlink()
-for name in ['settings','blocks']:
+for name in ['settings','blocks','public-headers']:
     path=site/f'storage/extensions/nx_Multi_tool/{name}.json'
     if path.exists(): path.unlink()
 db=sqlite3.connect(db_path)

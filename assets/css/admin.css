@@ -131,6 +131,28 @@
 .nxmt-security-header summary .nxmt-security-badge { float: right; }
 .nxmt-security-header summary::after { content: ""; display: block; clear: both; }
 .nxmt-security-header-detail { padding: 1px 10px 10px; }
+.nxmt-security-header-settings {
+    border-left: 3px solid var(--nxmt-border);
+    margin-top: 9px;
+    padding: 0 10px 3px;
+}
+.nxmt-security-header-settings fieldset {
+    border: none;
+    min-inline-size: 0;
+    margin: 0 0 7px;
+    padding: 0;
+}
+.nxmt-security-header-settings pre {
+    margin: 8px 0;
+    padding: 8px 10px;
+    border-radius: 5px;
+    background: #eef5f1;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.nxmt-security-feature-options { display: flex; flex-wrap: wrap; gap: 3px 16px; }
+.nxmt .nxmt-security-feature-options label { display: inline-flex; align-items: center; margin: 5px 0; }
+.nxmt .nxmt-security-feature-options input[type="checkbox"] { width: auto; }
 .nxmt-security-breakdown { background: #f6f9f8; border-radius: 6px; padding: 1px 8px; margin-bottom: 10px; }
 .nxmt-security-breakdown dl { margin: 0 0 8px; }
 .nxmt-security-breakdown dl div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 5px 3px; }

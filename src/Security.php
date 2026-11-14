@@ -6,13 +6,14 @@ final class Security
     public const SOURCES = ['cms' => 'NexaPress内', 'server' => 'サーバー側', 'http' => '公開応答'];
     public const STATES = ['present' => '確認あり', 'absent' => '設定なし', 'unknown' => '未確認'];
 
-    public static function inspect(?array $sources = null): array
+    public static function inspect(?array $sources = null, bool $settingsChanged = false): array
     {
         $initial = $sources === null;
         $sources = array_replace(array_fill_keys(array_keys(self::SOURCES), $initial), $sources ?? []);
         $cms = $sources['cms'];
         $server = $sources['server'];
-        $headers = SecurityHeaders::inspect(SiteInfo::publicUrl(), !$initial && $sources['http']);
+        $policies = self::attempt(static fn() => PublicHeaders::settings());
+        $headers = SecurityHeaders::inspect(SiteInfo::publicUrl(), !$initial && !$settingsChanged && $sources['http'], $policies ?? [], $settingsChanged);
 
         $version = $cms ? self::attempt(static function () {
             $config = require BASE_PATH . '/config/version.php';
@@ -186,7 +187,7 @@ final class Security
             $items[] = ['number' => $index + 1, 'name' => $name, 'area' => $area, 'rows' => $rows];
         }
 
-        return ['items' => $items, 'facts' => $facts, 'public' => $headers, 'checked_at' => time(),
+        return ['items' => $items, 'facts' => $facts, 'public' => $headers, 'policies' => $policies, 'checked_at' => time(),
             'observations' => $cms ? self::logs() : null];
     }
 

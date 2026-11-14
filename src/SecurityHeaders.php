@@ -4,20 +4,21 @@ namespace NxMultiTool;
 final class SecurityHeaders
 {
     private const RULES = [
-        'hsts' => ['Strict-Transport-Security', 'HTTPS接続をブラウザーに指示', 25, 'HTTPSの応答で、有効期間（max-age）が0より大きい。', 15],
-        'csp' => ['Content-Security-Policy', 'スクリプトの読み込みと実行を制限', 30, '実際に適用されるCSPでスクリプトを制限。報告専用は0点。', 4],
-        'frame' => ['X-Frame-Options', '他のページへの埋め込みを制限', 20, 'DENY・SAMEORIGIN、または適用されるCSPの frame-ancestors で制限。', 14],
-        'nosniff' => ['X-Content-Type-Options', 'ブラウザーによるファイル形式の推測を抑制', 10, '値が nosniff。', 4],
-        'referrer' => ['Referrer-Policy', '送信する参照元URLの範囲を指定', 10, '他のサイトに参照元のパスを送らない方針。', 16],
-        'permissions' => ['Permissions-Policy', 'ブラウザー機能の利用を制限', 5, 'カメラ・マイク・位置情報のいずれかに利用範囲の制限がある。', null],
+        'hsts' => ['HTTPS接続をブラウザーに指示', 25, 'HTTPSの応答で、有効期間（max-age）が0より大きい。', 15],
+        'csp' => ['スクリプトの読み込みと実行を制限', 30, '実際に適用されるCSPでスクリプトを制限。報告専用は0点。', 4],
+        'frame' => ['他のページへの埋め込みを制限', 20, 'DENY・SAMEORIGIN、または適用されるCSPの frame-ancestors で制限。', 14],
+        'nosniff' => ['ブラウザーによるファイル形式の推測を抑制', 10, '値が nosniff。', 4],
+        'referrer' => ['送信する参照元URLの範囲を指定', 10, '他のサイトに参照元のパスを送らない方針。', 16],
+        'permissions' => ['ブラウザー機能の利用を制限', 5, 'カメラ・マイク・位置情報のいずれかに利用範囲の制限がある。', null],
     ];
 
-    public static function inspect(?string $url, bool $requested): array
+    public static function inspect(?string $url, bool $requested, array $policies = [], bool $settingsChanged = false): array
     {
         $status = null;
         $headers = null;
         $url = $url ?? '';
-        $message = '「公開応答」を選択して再チェックすると、公開トップの応答を取得します。';
+        $message = $settingsChanged ? '「再チェック」で変更後の公開応答を確認できます。'
+            : '「公開応答」を選択して再チェックすると、公開トップの応答を取得します。';
         if ($requested && $url === '') {
             $message = '現在のCMSの公開URLを確認できませんでした。';
         } elseif ($requested) {
@@ -39,7 +40,13 @@ final class SecurityHeaders
             }
         }
 
-        return ['url' => $url, 'http' => $status, 'message' => $message, 'collected' => $headers !== null]
+        $observed = [];
+        if ($headers !== null) {
+            foreach ($policies as $id => $policy) {
+                $observed[$id] = PublicHeaders::observation($id, $policy, $headers);
+            }
+        }
+        return ['url' => $url, 'http' => $status, 'message' => $message, 'collected' => $headers !== null, 'observed' => $observed]
             + self::evaluate($headers, parse_url($url, PHP_URL_SCHEME) === 'https', session_name() ?: '');
     }
 
@@ -60,7 +67,8 @@ final class SecurityHeaders
         $rows = [];
         $score = 0;
         $complete = true;
-        foreach (self::RULES as $key => [$name, $purpose, $max, $rule, $category]) {
+        foreach (self::RULES as $key => [$purpose, $max, $rule, $category]) {
+            $name = PublicHeaders::NAMES[$key];
             [$state, $detail] = $results[$key] ?? ['unknown', '公開応答は未確認です。'];
             $points = $state === 'unknown' ? null : ($state === 'present' ? $max : 0);
             $complete = $complete && $points !== null;

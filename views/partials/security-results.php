@@ -12,8 +12,19 @@ $scope = [
 $badge = static function (string $state): void { ?>
     <span class="nxmt-security-badge" data-state="<?= e($state) ?>"><?= e(Security::STATES[$state]) ?></span>
 <?php };
-$headerRow = static function (array $row) use ($badge): void { ?>
-    <details class="nxmt-security-header" data-security-row="<?= e($row['state']) ?>">
+$supplementGuides = [
+    'cookie' => 'セッションCookieの属性は、NexaPress本体の app/Core/Auth.php のセッション開始処理と、PHPのセッション設定で確認できます。',
+    'cache' => '対象ページのコントローラー、または配信サーバーのキャッシュ設定を確認します。ログイン中や個人情報を含む応答は、公開キャッシュの対象から外します。',
+    'cors' => '外部からの読み取りを許可するAPI単位で設定します。対象の処理や配信サーバーで、必要なオリジンを指定してください。',
+    'server' => 'ServerはWebサーバーやCDN、X-Powered-ByはPHPの expose_php など、配信環境の設定で確認できます。',
+];
+$referenceGuides = [
+    'Cross-Origin-Embedder-Policy' => '外部の画像やスクリプトの読み込みを確認したうえで、対象ページの応答に設定します。',
+    'Cross-Origin-Opener-Policy' => 'ログインや決済などのポップアップの連携を確認したうえで、対象ページの応答に設定します。',
+    'Cross-Origin-Resource-Policy' => '埋め込み元を制限する場合は、画像やファイルなど、対象のリソース自体の応答に設定します。',
+];
+$headerRow = static function (array $row, string $id, ?string $guide = null) use ($badge, $data, $public): void { ?>
+    <details class="nxmt-security-header" data-security-header="<?= e($id) ?>" data-security-row="<?= e($row['state']) ?>">
         <summary>
             <span><code><?= e($row['name']) ?></code><small><?= e($row['purpose']) ?></small></span>
             <?php $badge($row['state']); ?>
@@ -22,6 +33,11 @@ $headerRow = static function (array $row) use ($badge): void { ?>
             <p><?= e($row['detail']) ?></p>
             <?php if ($row['category'] !== null): ?>
                 <button type="button" class="secondary" data-security-jump="<?= (int)$row['category'] ?>"><?= (int)$row['category'] ?>番の分類を見る</button>
+            <?php endif; ?>
+            <?php if ($guide === null): ?>
+                <?php require __DIR__ . '/public-header-settings.php'; ?>
+            <?php else: ?>
+                <details class="nxmt-security-header-settings"><summary>設定先を見る</summary><p><?= e($guide) ?></p></details>
             <?php endif; ?>
         </div>
     </details>
@@ -94,6 +110,8 @@ $headerRow = static function (array $row) use ($badge): void { ?>
         <?php if ($public['http'] !== null): ?><span class="nxmt-security-badge">HTTP <?= (int)$public['http'] ?></span><?php endif; ?>
     </div>
     <p class="nxmt-muted"><?= e($public['message']) ?></p>
+    <p class="nxmt-muted">適用先は公開HTMLです。既存のPHPヘッダーは優先されます。設定後に「再チェック」で実際の公開応答を確認できます。</p>
+    <?php if ($data['policies'] === null): ?><p class="nxmt-notice is-error">公開ヘッダーの保存内容を読み取れませんでした。</p><?php endif; ?>
     <details class="nxmt-security-breakdown">
         <summary>採点の内訳 <span class="nxmt-security-badge"><?= e($score) ?></span></summary>
         <p class="nxmt-muted">公開トップの主要6項目に対する独自の配点です。</p>
@@ -107,18 +125,21 @@ $headerRow = static function (array $row) use ($badge): void { ?>
         </dl>
     </details>
     <div data-security-main-headers>
-        <?php foreach ($public['rows'] as $row) { $headerRow($row); } ?>
+        <?php foreach ($public['rows'] as $id => $row) { $headerRow($row, $id); } ?>
     </div>
     <p class="nxmt-muted" data-security-empty hidden>該当する主要ヘッダーはありません。</p>
     <details class="nxmt-security-supplement" data-security-supplement>
         <summary>応答の補足</summary>
-        <?php foreach ($public['supplement'] as $row) { $headerRow($row); } ?>
+        <?php foreach ($public['supplement'] as $id => $row) { $headerRow($row, $id, $supplementGuides[$id]); } ?>
     </details>
-    <details class="nxmt-security-supplement" data-security-unfiltered>
+    <details class="nxmt-security-supplement" data-security-unfiltered data-security-references>
         <summary>参考ヘッダー</summary>
         <?php foreach ($public['references'] as $row): ?>
             <div class="nxmt-security-check-row">
-                <div><strong><code><?= e($row['name']) ?></code></strong><small><?= e($row['purpose']) ?></small><p><?= e($row['detail']) ?></p></div>
+                <div>
+                    <strong><code><?= e($row['name']) ?></code></strong><small><?= e($row['purpose']) ?></small><p><?= e($row['detail']) ?></p>
+                    <details class="nxmt-security-header-settings"><summary>設定先を見る</summary><p><?= e($referenceGuides[$row['name']]) ?></p></details>
+                </div>
             </div>
         <?php endforeach; ?>
     </details>

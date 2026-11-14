@@ -42,6 +42,7 @@
     const submit = form.querySelector('[type="submit"]');
     let active = 'categories';
     let filter = 'all';
+    let pending = false;
 
     function updateView() {
       const select = results.querySelector('[data-security-filter]');
@@ -63,34 +64,92 @@
       });
     }
 
-    form.addEventListener('change', () => { message.textContent = '「再チェック」で選択を反映します。'; });
-    form.addEventListener('submit', async event => {
-      event.preventDefault();
-      if (submit.disabled) return;
+    async function refresh(fields, status, success, busy) {
+      pending = true;
       submit.disabled = true;
-      const fields = new FormData(form);
-      fields.set('op', 'inspect');
       form.querySelector('fieldset').disabled = true;
       results.setAttribute('aria-busy', 'true');
-      message.textContent = '確認中…';
-      const openGroups = Array.from(results.querySelectorAll('[data-security-group][open]'), group => group.dataset.securityGroup);
+      status.textContent = busy;
+      const groups = Array.from(results.querySelectorAll('[data-security-group][open]'), item => item.dataset.securityGroup);
+      const openHeaders = Array.from(results.querySelectorAll('[data-security-header][open]'), item => item.dataset.securityHeader);
+      const supplements = Array.from(results.querySelectorAll('[data-security-supplement], [data-security-references]'), item => item.open);
       const scoreOpen = results.querySelector('.nxmt-security-breakdown').open;
+      const openSettings = Array.from(results.querySelectorAll('[data-security-header] [data-header-settings][open]'),
+        item => item.closest('[data-security-header]').dataset.securityHeader);
+      const header = fields.get('header');
       try {
         const data = await api('security_check', fields);
         results.innerHTML = data.html;
-        results.querySelectorAll('[data-security-group]').forEach(group => {
-          group.open = openGroups.includes(group.dataset.securityGroup);
+        results.querySelectorAll('[data-security-group]').forEach(item => {
+          item.open = groups.includes(item.dataset.securityGroup);
+        });
+        results.querySelectorAll('[data-security-header]').forEach(item => {
+          item.open = openHeaders.includes(item.dataset.securityHeader);
+        });
+        results.querySelectorAll('[data-security-supplement], [data-security-references]').forEach((item, index) => {
+          item.open = supplements[index];
+        });
+        openSettings.forEach(id => {
+          results.querySelector('[data-security-header="' + id + '"] [data-header-settings]').open = true;
         });
         results.querySelector('.nxmt-security-breakdown').open = scoreOpen;
+        if (header) {
+          active = 'headers';
+          filter = 'all';
+        }
         updateView();
-        message.textContent = '結果を更新しました。';
+        if (header) {
+          const item = results.querySelector('[data-security-header="' + header + '"]');
+          item.querySelector('[data-header-status]').textContent = success;
+          item.querySelector('[data-header-settings] > summary').focus({preventScroll: true});
+        } else {
+          message.textContent = success;
+        }
       } catch (error) {
-        message.textContent = error.message;
+        status.textContent = error.message;
       } finally {
+        pending = false;
         results.removeAttribute('aria-busy');
         form.querySelector('fieldset').disabled = false;
         submit.disabled = false;
       }
+    }
+
+    form.addEventListener('change', () => { message.textContent = '「再チェック」で選択を反映します。'; });
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      if (pending) return;
+      const fields = new FormData(form);
+      fields.set('op', 'inspect');
+      refresh(fields, message, '結果を更新しました。', '確認中…');
+    });
+    results.addEventListener('submit', async event => {
+      const editor = event.target;
+      if (!editor.matches('[data-header-form]')) return;
+      event.preventDefault();
+      const action = event.submitter;
+      if (pending || !action) return;
+      const removing = action.value === 'remove_header';
+      const preview = editor.querySelector('[data-header-preview]').textContent;
+      if (!confirm(removing ? 'この項目の設定を解除しますか？' : '公開HTMLに適用しますか？\n\n' + preview)) return;
+      const fields = new FormData(form);
+      new FormData(editor).forEach((value, key) => fields.append(key, value));
+      fields.set('op', action.value);
+      const buttons = Array.from(editor.querySelectorAll('button:enabled'));
+      buttons.forEach(button => { button.disabled = true; });
+      const success = removing ? '設定を解除しました。「再チェック」で公開応答を確認できます。'
+        : '設定を保存しました。「再チェック」で公開応答を確認できます。';
+      await refresh(fields, editor.querySelector('[data-header-status]'), success, '保存中…');
+      buttons.forEach(button => { button.disabled = false; });
+    });
+    results.addEventListener('input', event => {
+      const editor = event.target.closest('[data-header-form]');
+      if (!editor) return;
+      const preview = editor.querySelector('[data-header-preview]');
+      const fields = new FormData(editor);
+      const name = preview.dataset.headerName + (fields.get('mode') === 'report' ? '-Report-Only' : '');
+      const value = fields.get('value') ?? fields.getAll('features[]').map(feature => feature + '=()').join(', ');
+      preview.textContent = name + ': ' + value.trim();
     });
 
     results.addEventListener('change', event => {
