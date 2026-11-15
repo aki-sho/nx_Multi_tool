@@ -174,6 +174,12 @@ $loginUrl = 'https://current.example.test' . url('admin/login');
 $loginRows = array_values(array_filter($crawl['rows'], static fn($row) => $row['url'] === $loginUrl));
 check(count($loginRows) === 1 && $loginRows[0]['method'] === 'CMS設定（ログイン）'
     && $loginRows[0]['http'] === 0 && $loginRows[0]['access'] === '未確認', 'standard login URL is listed without an HTTP result');
+check(in_array('admin', $loginRows[0]['tags'], true)
+    && HttpClient::isAdminUrl('https://example.test/blog/admin', 'https://example.test/blog')
+    && HttpClient::isAdminUrl('https://example.test/blog/public/admin/login', 'https://example.test/blog')
+    && !HttpClient::isAdminUrl('https://example.test/blog/admin-news', 'https://example.test/blog')
+    && !HttpClient::isAdminUrl('https://example.test/blog/guide/admin', 'https://example.test/blog'),
+    'admin filter matches the actual administration prefix including subdirectory installs');
 check(!in_array($loginUrl, Storage::read('crawl-1-' . $crawl['run'])['queue'], true), 'standard login URL is not queued for crawling');
 check(!isset(Settings::all()['site_url']) && Settings::all()['comments_open'], 'legacy URL ignored while other settings are read normally');
 check(count(array_filter($crawl['rows'],static fn($row)=>str_ends_with($row['url'],'/featured-only.png')&&$row['method']==='アイキャッチ'))===1,'CMS featured media reference collected');

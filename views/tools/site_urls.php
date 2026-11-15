@@ -6,7 +6,13 @@
     <div class="nxmt-fields"><label>検索<input type="search" data-crawl-search placeholder="URL・発見元"></label>
     <label>ファイルの種類<select data-crawl-type><option value="">すべて</option><?php foreach (['page'=>'ページ','css'=>'CSS','js'=>'JavaScript','image'=>'画像','font'=>'フォント','sitemap'=>'XML・サイトマップ','file'=>'その他のファイル'] as $key=>$label): ?><option value="<?= e($key) ?>"><?= e($label) ?></option><?php endforeach; ?></select></label>
     <label>対象の扱い<select data-crawl-mode><option value="exclude">チェックした種類を除外</option><option value="only">チェックした種類だけ表示</option></select></label></div>
-    <div class="nxmt-inline"><label><input type="checkbox" data-crawl-kind="upload">アップロード配下</label><label><input type="checkbox" data-crawl-kind="image_redirect">画像への転送</label><label><input type="checkbox" data-crawl-kind="attachment">添付ページ形式</label><label><input type="checkbox" data-crawl-issues>要確認の結果だけ表示</label></div>
+    <div class="nxmt-inline">
+        <label><input type="checkbox" data-crawl-kind="upload">アップロード配下</label>
+        <label><input type="checkbox" data-crawl-kind="image_redirect">画像への転送</label>
+        <label><input type="checkbox" data-crawl-kind="attachment">添付ページ形式</label>
+        <label><input type="checkbox" data-crawl-kind="admin">admin配下</label>
+        <label><input type="checkbox" data-crawl-issues>要確認の結果だけ表示</label>
+    </div>
     <p class="nxmt-muted">robots.txt・sitemap.xmlは探索用の候補も確認します。候補の404は「未検出」とし、実際のリンク切れと区別します。アクセス条件は未ログインでの取得結果で、安全性の判定ではありません。</p>
     <p class="nxmt-muted">収集を始めるたびに現在のログインURLを「CMS設定（ログイン）」として表示します。HTTP欄の「—」は未確認です。</p>
     <p class="nxmt-muted">最大10,000候補・2,000回の通信。同一サイトの公開IPだけを取得し、管理・認証・内部領域とクエリ付きURLは巡回しません。画面を離れると結果を削除します（通信できない場合も1時間で期限切れ）。</p>

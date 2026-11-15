@@ -127,6 +127,11 @@ final class Crawler
     {
         $rows = array_values(array_filter($state['rows'], static fn($row) => !isset($state['excluded'][$row['url']])
             && ($before === null || !isset($before[$row['url']]) || $before[$row['url']] !== $row)));
+        // Classify the returned rows so inventories started before an extension update work too.
+        foreach ($rows as &$row) {
+            if (HttpClient::isAdminUrl($row['url'], $state['base'])) { $row['tags'][] = 'admin'; }
+        }
+        unset($row);
         return ['run' => $state['run'], 'rows' => $rows, 'delta' => $before !== null, 'candidates' => count($state['rows']), 'requests' => $state['requests'], 'done' => $state['done'], 'limited' => $state['limited']];
     }
 }

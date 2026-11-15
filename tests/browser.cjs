@@ -278,6 +278,20 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
           + 'return response.ok && (await response.text()).includes("ログインページ変更設定を保存しました");})()'), 'Access Guard saved login settings');
       };
       await collectLoginUrl('/admin/login','the initial inventory lists the standard login URL without an HTTP result');
+      const inventoryUrls = `Array.from(document.querySelectorAll('[data-crawl-table] tbody tr'), row => row.cells[0].textContent)`;
+      await evaluate(`document.querySelector('[data-crawl-kind="admin"]').click()`);
+      check(await evaluate(`!${inventoryUrls}.includes(location.origin + '/admin/login')
+        && ${inventoryUrls}.includes(location.origin + '/')`), 'admin checkbox excludes only admin URLs');
+      await evaluate(`(() => {
+        const mode = document.querySelector('[data-crawl-mode]');
+        mode.value = 'only'; mode.dispatchEvent(new Event('input'));
+      })()`);
+      check(await evaluate(`${inventoryUrls}.join() === location.origin + '/admin/login'`), 'admin checkbox can show only admin URLs');
+      await evaluate(`(() => {
+        const mode = document.querySelector('[data-crawl-mode]');
+        mode.value = 'exclude'; mode.dispatchEvent(new Event('input'));
+        document.querySelector('[data-crawl-kind="admin"]').click();
+      })()`);
       await setLoginUrl('inventory-login-test', true);
       await collectLoginUrl('/inventory-login-test','recollect reflects the changed login URL');
       await setLoginUrl('inventory-login-next', true);

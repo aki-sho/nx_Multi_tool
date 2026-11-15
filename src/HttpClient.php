@@ -3,6 +3,8 @@ namespace NxMultiTool;
 
 final class HttpClient
 {
+    private const ADMIN_PATH = '#^/(?:public/)?admin(?:/|$)#i';
+
     public static function base(string $url): string
     {
         $p = parse_url($url);
@@ -73,15 +75,24 @@ final class HttpClient
         }
         return $root['scheme'] . '://' . $root['host'] . (isset($root['port']) ? ':' . $root['port'] : '') . $path . $query;
     }
-    public static function protectedUrl(string $url, string $base, ?string $loginPath = null): bool
+    private static function relativePath(string $url, string $base): ?string
     {
         $prefix = rtrim((string)parse_url($base, PHP_URL_PATH), '/');
         $path = (string)parse_url($url, PHP_URL_PATH);
         for ($i = 0; $i < 3; $i++) { $next = rawurldecode($path); if ($next === $path) { break; } $path = $next; }
         $path = self::path($path);
-        if ($prefix !== '' && $path !== $prefix && !str_starts_with($path, $prefix . '/')) { return true; }
-        $relative = substr($path, strlen($prefix));
-        if (preg_match('#^/(?:public/)?(?:admin|install|nx-multi-tool|app|config|database|storage|extensions|tests|update-package|dist|vendor|node_modules)(?:/|$)|(?:^|/)\.#i', $relative)) {
+        if ($prefix !== '' && $path !== $prefix && !str_starts_with($path, $prefix . '/')) { return null; }
+        return substr($path, strlen($prefix));
+    }
+    public static function isAdminUrl(string $url, string $base): bool
+    {
+        return preg_match(self::ADMIN_PATH, self::relativePath($url, $base) ?? '') === 1;
+    }
+    public static function protectedUrl(string $url, string $base, ?string $loginPath = null): bool
+    {
+        $relative = self::relativePath($url, $base);
+        if ($relative === null || preg_match(self::ADMIN_PATH, $relative)
+            || preg_match('#^/(?:public/)?(?:install|nx-multi-tool|app|config|database|storage|extensions|tests|update-package|dist|vendor|node_modules)(?:/|$)|(?:^|/)\.#i', $relative)) {
             return true;
         }
 
