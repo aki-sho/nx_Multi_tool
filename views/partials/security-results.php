@@ -2,6 +2,7 @@
 use NxMultiTool\Security;
 
 $public = $data['public'];
+$redirect = $data['https_redirect'];
 $score = $public['score'] === null ? '未採点' : $public['score'] . ' / 100点';
 $formatPoints = static fn(int $tenths): string => ($tenths % 10 === 0)
     ? (string)intdiv($tenths, 10) : number_format($tenths / 10, 1);
@@ -128,8 +129,10 @@ $headerRow = static function (array $row, string $id) use ($badge, $importanceBa
             </div>
             <div class="nxmt-security-group-body">
                 <div class="nxmt-security-check-head"><span><?= e($locationLabel) ?></span><span>判定</span></div>
-                <?php foreach ($group['rows'] as $row): ?>
-                    <div class="nxmt-security-check-row" data-security-row="<?= e($row['state']) ?>">
+                <?php foreach ($group['rows'] as $row):
+                    $isRedirect = ($row['id'] ?? '') === 'https_redirect';
+                ?>
+                    <div class="nxmt-security-check-row" data-security-row="<?= e($row['state']) ?>"<?= $isRedirect ? ' data-https-redirect' : '' ?>>
                         <div>
                             <strong><?= e($row['name']) ?></strong>
                             <small><?= e($row['location']) ?></small>
@@ -139,6 +142,26 @@ $headerRow = static function (array $row, string $id) use ($badge, $importanceBa
                             <?php if (!$row['scored']): ?><span class="nxmt-security-badge">採点対象外</span><?php endif; ?>
                             <?php $badge($row['state']); ?>
                         </div>
+                        <?php if ($isRedirect && ($row['state'] === 'absent' || $redirect['notice'] !== null)): ?>
+                            <div class="nxmt-security-redirect">
+                                <?php if ($row['state'] === 'absent'): ?>
+                                    <details class="nxmt-security-header-settings" data-redirect-settings<?= $redirect['file'] === null ? ' open' : '' ?>>
+                                        <summary>設定案を見る</summary>
+                                        <?php if ($redirect['file'] !== null): ?>
+                                            <p>適用先 <code><?= e($redirect['file']) ?></code></p>
+                                            <p>適用前の設定を保存します。移行中は一時転送を使い、動作を確認してから恒久転送に切り替えます。</p>
+                                            <form method="post" data-https-redirect-form>
+                                                <button type="submit">この項目を適用</button>
+                                            </form>
+                                        <?php else: ?>
+                                            <p><?= e($redirect['reason']) ?></p>
+                                            <p>転送の設定先は、ホスティングの管理画面またはWebサーバーの設定を確認してください。</p>
+                                        <?php endif; ?>
+                                    </details>
+                                <?php endif; ?>
+                                <p data-redirect-status<?= !empty($redirect['notice']['error']) ? ' class="is-error" role="alert"' : ' role="status"' ?>><?= e($redirect['notice']['message'] ?? '') ?></p>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 <?php endforeach; ?>
             </div>

@@ -173,6 +173,12 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
         });
     })()`), 'importance legend and explanations cover every public response row');
     check((await api('security_check', {op:'inspect'}, false)).status === 419, 'rechecking requires CSRF');
+    check(await evaluate(`(() => {
+      const rows = [...document.querySelectorAll('[data-security-group="15"] .nxmt-security-check-row')];
+      return rows.length === 3 && rows[1].matches('[data-https-redirect]')
+        && rows[1].dataset.securityRow === 'unknown' && !rows[1].querySelector('[data-https-redirect-form]');
+    })()`), 'HTTPS redirect is shown after the HTTPS response and stays unconfirmed without evidence');
+    check((await api('security_check', {op:'apply_https_redirect'}, false)).status === 419, 'HTTPS redirect settings require CSRF');
     await evaluate(`document.querySelector('[data-security-form] button').click()`);
     await waitFor(`document.querySelector('[data-security-status]').textContent === '結果を更新しました。'`);
     check(await evaluate(`document.querySelector('[data-security-score]').textContent === '未採点'

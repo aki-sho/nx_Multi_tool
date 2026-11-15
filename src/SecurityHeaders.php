@@ -12,7 +12,7 @@ final class SecurityHeaders
         'permissions' => ['ブラウザー機能の利用を制限', 5, 'カメラ・マイク・位置情報のいずれかに利用範囲の制限がある。', null],
     ];
 
-    public static function inspect(?string $url, bool $requested, array $policies = [], bool $settingsChanged = false): array
+    public static function inspect(?string $url, bool $requested, array $policies = [], bool $settingsChanged = false, ?array $response = null): array
     {
         $status = null;
         $headers = null;
@@ -23,7 +23,7 @@ final class SecurityHeaders
             $message = '現在のCMSの公開URLを確認できませんでした。';
         } elseif ($requested) {
             try {
-                $response = HttpClient::fetch($url, $url, includeHeaderValues: true);
+                $response ??= HttpClient::fetch($url, $url, includeHeaderValues: true);
                 $status = $response['status'];
                 $classified = ResponseClassifier::classify($response);
                 $mime = strtolower(trim(explode(';', $response['headers']['content-type'] ?? '')[0]));

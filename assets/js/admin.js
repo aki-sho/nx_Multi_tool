@@ -137,6 +137,8 @@
       const openBreakdowns = Array.from(results.querySelectorAll('[data-security-breakdown][open]'), item => item.dataset.securityBreakdown);
       const openSettings = Array.from(results.querySelectorAll('[data-security-header] [data-header-settings][open]'),
         item => item.closest('[data-security-header]').dataset.securityHeader);
+      const redirectSettingsOpen = results.querySelector('[data-redirect-settings]')?.open;
+      const applyingRedirect = fields.get('op') === 'apply_https_redirect';
       const header = fields.get('header');
       try {
         const data = await api('security_check', fields);
@@ -153,11 +155,16 @@
         openSettings.forEach(id => {
           results.querySelector('[data-security-header="' + id + '"] [data-header-settings]').open = true;
         });
+        const redirectSettings = results.querySelector('[data-redirect-settings]');
+        if (redirectSettingsOpen && redirectSettings) redirectSettings.open = true;
         results.querySelectorAll('[data-security-breakdown]').forEach(item => {
           item.open = openBreakdowns.includes(item.dataset.securityBreakdown);
         });
         if (header) {
           active = 'headers';
+          filter = 'all';
+        } else if (applyingRedirect) {
+          active = 'categories';
           filter = 'all';
         }
         updateView();
@@ -188,6 +195,17 @@
     });
     results.addEventListener('submit', async event => {
       const editor = event.target;
+      if (editor.matches('[data-https-redirect-form]')) {
+        event.preventDefault();
+        if (pending) return;
+        const fields = new FormData(form);
+        fields.set('op', 'apply_https_redirect');
+        const button = editor.querySelector('button');
+        button.disabled = true;
+        await refresh(fields, editor.closest('[data-https-redirect]').querySelector('[data-redirect-status]'), '', '適用と公開応答を確認中…');
+        button.disabled = false;
+        return;
+      }
       if (!editor.matches('[data-header-form]')) return;
       event.preventDefault();
       const action = event.submitter;

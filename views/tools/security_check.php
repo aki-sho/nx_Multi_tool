@@ -4,7 +4,7 @@
         <fieldset>
             <legend>読み取り元</legend>
             <div class="nxmt-security-sources">
-                <?php foreach (['cms' => '本体・拡張の設定', 'server' => 'PHPの実行設定', 'http' => 'ヘッダー・Cookie属性'] as $source => $detail): ?>
+                <?php foreach (['cms' => '本体・拡張の設定', 'server' => 'PHPの実行設定', 'http' => 'HTTPS転送・ヘッダー・Cookie属性'] as $source => $detail): ?>
                     <label>
                         <input type="checkbox" name="sources[]" value="<?= e($source) ?>" checked>
                         <span><strong><?= e(Security::SOURCES[$source]) ?></strong><small><?= e($detail) ?></small></span>

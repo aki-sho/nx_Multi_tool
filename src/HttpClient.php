@@ -89,7 +89,11 @@ final class HttpClient
         $relative = rtrim($relative, '/');
         return $relative === $loginPath || $relative === '/public' . $loginPath;
     }
-    public static function fetch(string $url, string $base, bool $head = false, int $redirects = 0, bool $range = false, int &$requests = 0, array $history = [], bool $includeHeaderValues = false): array
+    public static function fetch(
+        string $url, string $base, bool $head = false, int $redirects = 0, bool $range = false,
+        int &$requests = 0, array $history = [], bool $includeHeaderValues = false,
+        bool $uncached = false, ?float $deadline = null
+    ): array
     {
         if (!function_exists('curl_init')) { throw new \RuntimeException('HTTP取得にはPHP cURLが必要です。'); }
         $safe = self::resolve($url, $base . '/', $base);
@@ -101,10 +105,12 @@ final class HttpClient
         if (!$ips) { throw new \RuntimeException('公開IPを解決できません。'); }
         foreach ($ips as $ip) { if (!self::publicIp($ip)) { throw new \RuntimeException('内部・予約IPへの通信は許可されていません。'); } }
         $port = $p['port'] ?? ($p['scheme'] === 'https' ? 443 : 80);
+        $timeout = $deadline === null ? 8000 : (int)min(8000, ($deadline - microtime(true)) * 1000);
+        if ($timeout < 1) { throw new \RuntimeException('公開応答の確認時間を超えました。'); }
         $headers = []; $body = ''; $size = 0; $limit = $head ? 0 : ($range ? 512 : 1024 * 1024); $overflow = false;
         $headerValues = []; $headerBytes = 0;
         $ch = curl_init($safe);
-        curl_setopt_array($ch, [CURLOPT_FOLLOWLOCATION => false, CURLOPT_CONNECTTIMEOUT => 3, CURLOPT_TIMEOUT => 8,
+        curl_setopt_array($ch, [CURLOPT_FOLLOWLOCATION => false, CURLOPT_CONNECTTIMEOUT_MS => min(3000, $timeout), CURLOPT_TIMEOUT_MS => $timeout,
             CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS, CURLOPT_PROXY => '', CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2, CURLOPT_RESOLVE => [$host . ':' . $port . ':' . (str_contains($ips[0], ':') ? '[' . $ips[0] . ']' : $ips[0])],
             CURLOPT_USERAGENT => 'NX-Multi-Tool/' . Registry::VERSION . ' (+site administrator initiated)', CURLOPT_NOBODY => $head,
@@ -128,6 +134,7 @@ final class HttpClient
                 $body .= $chunk; return strlen($chunk);
             }]);
         if ($range) { curl_setopt($ch, CURLOPT_RANGE, '0-511'); }
+        if ($uncached) { curl_setopt($ch, CURLOPT_HTTPHEADER, ['Cache-Control: no-cache']); }
         if ($requests >= 8) { curl_close($ch); throw new \RuntimeException('転送確認の通信上限に達しました。'); }
         $requests++;
         $ok = curl_exec($ch); $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
@@ -140,9 +147,12 @@ final class HttpClient
                 return ['url' => $safe, 'status' => $status, 'headers' => $headers, 'body' => '', 'redirected' => $redirects > 0,
                     'requests' => $requests, 'history' => $history, 'blocked' => true, 'blocked_to' => $next ?? '外部または不正な転送先'];
             }
-            $result = self::fetch($next, $base, $head, $redirects + 1, $range, $requests, $history, $includeHeaderValues); $result['redirected'] = true; return $result;
+            $result = self::fetch($next, $base, $head, $redirects + 1, $range, $requests, $history, $includeHeaderValues, $uncached, $deadline);
+            $result['redirected'] = true; return $result;
         }
-        if ($head && in_array($status, [405, 501], true)) { return self::fetch($safe, $base, false, $redirects, true, $requests, $history, $includeHeaderValues); }
+        if ($head && in_array($status, [405, 501], true)) {
+            return self::fetch($safe, $base, false, $redirects, true, $requests, $history, $includeHeaderValues, $uncached, $deadline);
+        }
         $result = ['url' => $safe, 'status' => $status, 'headers' => $headers, 'body' => $body, 'redirected' => $redirects > 0, 'requests' => $requests, 'history' => $history];
         if ($includeHeaderValues) { $result['header_values'] = $headerValues; }
         return $result;

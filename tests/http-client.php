@@ -9,7 +9,9 @@ namespace NxMultiTool {
         $GLOBALS['nxmt_http_calls'][]=$handle;
         $responses=&$GLOBALS['nxmt_http_responses'];
         if (!$responses) { throw new \RuntimeException('Unexpected HTTP request'); }
-        $response=array_shift($responses); $handle->status=$response['status'];
+        $response=array_shift($responses);
+        if ($response instanceof \Closure) { $response = $response($handle); }
+        $handle->status=$response['status'];
         $header=$handle->options[CURLOPT_HEADERFUNCTION];$header($handle,'HTTP/1.1 '.$response['status']." Test\r\n");
         foreach ($response['headers'] ?? [] as $key => $values) {
             foreach ((array)$values as $value) { $header($handle, $key . ': ' . $value . "\r\n"); }
@@ -22,6 +24,12 @@ namespace NxMultiTool {
     }
     function curl_getinfo($handle,$option){return $handle->status;}
     function curl_close($handle){}
+    function is_readable(string $path): bool {
+        return $path !== ($GLOBALS['nxmt_test_unreadable'] ?? null) && \is_readable($path);
+    }
+    function is_writable(string $path): bool {
+        return $path !== ($GLOBALS['nxmt_test_unwritable'] ?? null) && \is_writable($path);
+    }
 }
 namespace {
     putenv('NXMT_TEST_BASE_PATH=/blog/public');
@@ -29,6 +37,8 @@ namespace {
     use NxMultiTool\HttpClient;
     use NxMultiTool\ResponseClassifier;
     use NxMultiTool\Discovery;
+    use NxMultiTool\HttpsRedirect;
+    use NxMultiTool\HttpsRedirectConfig;
     use NxMultiTool\SecurityHeaders;
     use NxMultiTool\SiteInfo;
     $checks=0;
@@ -135,5 +145,80 @@ namespace {
     expect(SecurityHeaders::evaluate(['strict-transport-security'=>['unrecognized']], true, session_name())['score'] === null, 'unresolved header prevents a misleading total');
     $GLOBALS['nxmt_http_responses'] = [['status' => 503, 'headers' => ['Content-Type' => 'text/html']]];
     expect(SecurityHeaders::inspect($siteUrl, true)['score'] === null, 'server error response remains unscored');
+
+    $rootUrl = 'https://instance.example.test/';
+    $valid = ['status' => 200, 'headers' => ['Content-Type' => 'text/html'], 'body' => '<html>Public test</html>'];
+    $redirect = static fn(int $code) => ['status' => $code, 'headers' => ['Location' => $rootUrl]];
+    $checkedHttps = ['collected' => true, 'url' => $rootUrl, 'http' => 200];
+    $htaccess = realpath(BASE_PATH) . DIRECTORY_SEPARATOR . '.htaccess';
+    $original = file_get_contents($htaccess);
+    $originalMode = fileperms($htaccess) & 0777;
+    $backup = BASE_PATH . '/storage/extensions/nx_Multi_tool/https-redirect.htaccess.backup';
+    $previousBackup = is_file($backup) ? file_get_contents($backup) : null;
+    $_SERVER['DOCUMENT_ROOT'] = realpath(BASE_PATH);
+    $_SERVER['SERVER_SOFTWARE'] = 'Apache/2.4';
+    $_SERVER['HTTPS'] = 'on';
+
+    $GLOBALS['nxmt_http_calls'] = [];
+    $GLOBALS['nxmt_http_responses'] = [$redirect(301)];
+    $check = HttpsRedirect::inspect($rootUrl, true, $checkedHttps);
+    expect($check['enabled'] === true && str_contains($check['detail'], '転送後 HTTP 200')
+        && $GLOBALS['nxmt_http_calls'][0]->url === 'http://instance.example.test/'
+        && count($GLOBALS['nxmt_http_calls']) === 1, 'confirmed redirect preserves the HTTP code and reuses the observed HTTPS response');
+    $GLOBALS['nxmt_http_responses'] = [$redirect(302), ['status' => 503]];
+    expect(HttpsRedirect::inspect($rootUrl, true, ['collected' => false])['enabled'] === null, 'HTTPS failure after transfer stays unconfirmed');
+    $GLOBALS['nxmt_http_calls'] = [];
+    $GLOBALS['nxmt_http_responses'] = [['status' => 301, 'headers' => ['Location' => 'https://outside.example/']]];
+    expect(HttpsRedirect::inspect($rootUrl, true, $checkedHttps)['enabled'] === null
+        && count($GLOBALS['nxmt_http_calls']) === 1, 'HTTPS redirect check does not contact a different host');
+    $GLOBALS['nxmt_http_responses'] = [];
+    expect(HttpsRedirect::inspect($rootUrl, true, $checkedHttps)['enabled'] === null, 'unavailable HTTP does not become an absent setting');
+    $GLOBALS['nxmt_http_responses'] = [$valid];
+    $check = HttpsRedirect::inspect($rootUrl, true, $checkedHttps);
+    expect($check['enabled'] === false && $check['file'] === '.htaccess', 'HTTP without transfer can be configured');
+    expect(file_get_contents($htaccess) === $original && (is_file($backup) ? file_get_contents($backup) : null) === $previousBackup,
+        'rechecking has not modified configuration or written a backup');
+    foreach (['nxmt_test_unreadable' => '読み取れません', 'nxmt_test_unwritable' => '書き込む権限がありません'] as $flag => $reason) {
+        $GLOBALS[$flag] = $htaccess;
+        $GLOBALS['nxmt_http_responses'] = [$valid];
+        $check = HttpsRedirect::inspect($rootUrl, true, $checkedHttps);
+        expect($check['enabled'] === false && $check['file'] === null && str_contains($check['reason'], $reason), $flag . ' has an explicit reason');
+        unset($GLOBALS[$flag]);
+    }
+    $_SERVER['DOCUMENT_ROOT'] = BASE_PATH . '/public';
+    expect(HttpsRedirectConfig::prepare($rootUrl)['relative'] === 'public/.htaccess', 'public document root selects its own file');
+    $_SERVER['DOCUMENT_ROOT'] = dirname(BASE_PATH);
+    $subdir = $rootUrl . rawurlencode(basename(BASE_PATH)) . '/';
+    expect(HttpsRedirectConfig::prepare($subdir)['relative'] === '.htaccess', 'a subdirectory resolves to the CMS root file');
+    $_SERVER['DOCUMENT_ROOT'] = realpath(BASE_PATH);
+
+    try {
+        $during = static function (int $code) use ($htaccess, $backup, $original, $redirect): \Closure {
+            return static function () use ($code, $htaccess, $backup, $original, $redirect): array {
+                $contents = file_get_contents($htaccess);
+                expect(file_get_contents($backup) === $original, 'the original file is backed up before the first write');
+                expect(str_contains($contents, '[R=' . $code . ',L,NE]') && strpos($contents, '[F,L,NC]')
+                    < strpos($contents, '# BEGIN NX Multi Tool HTTPS Redirect') && strpos($contents, '# END NX Multi Tool HTTPS Redirect')
+                    < strpos($contents, 'RewriteCond %{REQUEST_URI} !/public/'), 'rule is installed before checking the public response');
+                return $redirect($code);
+            };
+        };
+        $GLOBALS['nxmt_http_responses'] = [$valid, $valid, $during(302), $valid, $during(301), $valid];
+        $change = HttpsRedirect::apply($rootUrl);
+        expect(!$change['notice']['error'] && $change['result']['redirect_code'] === 301
+            && isset($change['publicResponse']['header_values']), '301 is kept only after both redirect stages are verified');
+        clearstatcache(true, $htaccess);
+        expect((fileperms($htaccess) & 0777) === $originalMode, 'permissions survive atomic replacement');
+
+        file_put_contents($htaccess, $original);
+        $GLOBALS['nxmt_http_responses'] = [$valid, $valid, $during(302), $valid, $during(301), ['status' => 503]];
+        $change = HttpsRedirect::apply($rootUrl);
+        expect($change['notice']['error'] && $change['result']['enabled'] === false
+            && file_get_contents($htaccess) === $original, 'failure during final verification restores the exact original bytes');
+    } finally {
+        file_put_contents($htaccess, $original);
+        if ($previousBackup !== null) { file_put_contents($backup, $previousBackup); }
+        elseif (is_file($backup)) { unlink($backup); }
+    }
     echo "HTTP and URL-discovery checks: $checks passed\n";
 }

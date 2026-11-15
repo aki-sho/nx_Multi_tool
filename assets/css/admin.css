@@ -124,6 +124,10 @@
 .nxmt-security-results small { display: block; color: #53696b; overflow-wrap: anywhere; }
 .nxmt-security-group-body { margin: 0 4px 10px; }
 .nxmt-security-check-row .nxmt-security-badge { justify-self: end; white-space: nowrap; }
+.nxmt-security-redirect { grid-column: 1 / -1; }
+.nxmt-security-redirect button { margin-top: 6px; }
+.nxmt-security-redirect [data-redirect-status]:empty { display: none; }
+.nxmt-security-redirect [data-redirect-status].is-error { color: #8a2c36; }
 .nxmt-security-panel-heading {
     display: flex;
     align-items: baseline;

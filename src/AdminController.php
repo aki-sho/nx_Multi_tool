@@ -67,18 +67,23 @@ final class AdminController
                 Access::json(['ok' => true, 'data' => ['memo' => $memo]]);
                 return;
             }
-            if ($tool === 'security_check' && in_array($op, ['inspect', 'apply_header', 'remove_header'], true)) {
+            if ($tool === 'security_check' && in_array($op, ['inspect', 'apply_header', 'remove_header', 'apply_https_redirect'], true)) {
                 $selected = $_POST['sources'] ?? [];
                 if (!is_array($selected)) { throw new \InvalidArgumentException('読み取り元を確認してください。'); }
                 $sources = [];
                 foreach (array_keys(Security::SOURCES) as $source) {
                     $sources[$source] = in_array($source, $selected, true);
                 }
-                if ($op !== 'inspect') {
+                $headersChanged = in_array($op, ['apply_header', 'remove_header'], true);
+                $redirectChange = null;
+                if ($headersChanged) {
                     $id = Access::text($_POST, 'header', 20);
                     PublicHeaders::set($id, $op === 'apply_header' ? $_POST : null);
+                } elseif ($op === 'apply_https_redirect') {
+                    if (!$sources['http']) { throw new \InvalidArgumentException('読み取り元の「公開応答」を選択してください。'); }
+                    $redirectChange = HttpsRedirect::apply(SiteInfo::publicUrl());
                 }
-                $data = Security::inspect($sources, $op !== 'inspect');
+                $data = Security::inspect($sources, $headersChanged, $redirectChange);
                 ob_start();
                 try {
                     require dirname(__DIR__) . '/views/partials/security-results.php';

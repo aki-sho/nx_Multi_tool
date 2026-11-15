@@ -7,14 +7,19 @@ final class Security
     public const STATES = ['present' => '確認あり', 'absent' => '設定なし', 'unknown' => '未確認'];
     private const CATEGORY_POINTS = ['high' => 6, 'medium' => 4, 'low' => 2];
 
-    public static function inspect(?array $sources = null, bool $settingsChanged = false): array
+    public static function inspect(?array $sources = null, bool $settingsChanged = false, ?array $redirectChange = null): array
     {
         $initial = $sources === null;
         $sources = array_replace(array_fill_keys(array_keys(self::SOURCES), $initial), $sources ?? []);
         $cms = $sources['cms'];
         $server = $sources['server'];
         $policies = self::attempt(static fn() => PublicHeaders::settings());
-        $headers = SecurityHeaders::inspect(SiteInfo::publicUrl(), !$initial && !$settingsChanged && $sources['http'], $policies ?? [], $settingsChanged);
+        $site = SiteInfo::publicUrl();
+        $publicResponse = $redirectChange['publicResponse'] ?? null;
+        $checkPublic = !$initial && !$settingsChanged && $sources['http'];
+        $headers = SecurityHeaders::inspect($site, $checkPublic && ($redirectChange === null || $publicResponse !== null),
+            $policies ?? [], $settingsChanged, $publicResponse);
+        $redirect = HttpsRedirect::inspect($site, $checkPublic, $headers, $redirectChange);
 
         $version = $cms ? self::attempt(static function () {
             $config = require BASE_PATH . '/config/version.php';
@@ -148,6 +153,8 @@ final class Security
                 self::item('公開トップのHTTPS応答', 'http', '未ログインで取得した公開トップの応答',
                     $headers['collected'] ? parse_url($headers['url'], PHP_URL_SCHEME) === 'https' : null,
                     $headers['collected'] ? '応答を取得したURLの方式 ' . strtoupper((string)parse_url($headers['url'], PHP_URL_SCHEME)) : $headers['message']),
+                self::item('HTTPS強制転送', 'http', '未ログインで取得した公開トップのHTTP応答', $redirect['enabled'], $redirect['detail'])
+                    + ['id' => 'https_redirect'],
                 $responseItem($headers['rows']['hsts']),
             ]],
             ['公開ファイルからの情報漏えい', 'both', 'high', [
@@ -196,7 +203,7 @@ final class Security
                 'rows' => $rows, 'score' => $score];
         }
 
-        return ['items' => $items, 'facts' => $facts, 'public' => $headers, 'policies' => $policies,
+        return ['items' => $items, 'facts' => $facts, 'public' => $headers, 'policies' => $policies, 'https_redirect' => $redirect,
             'category_score' => $categoryScore, 'category_points' => self::CATEGORY_POINTS, 'checked_at' => time(),
             'observations' => $cms ? self::logs() : null];
     }
