@@ -3,7 +3,7 @@ namespace NxMultiTool;
 
 final class Registry
 {
-    public const VERSION = '1.1.3';
+    public const VERSION = '1.1.5';
     public static function all(): array
     {
         return [
@@ -17,8 +17,7 @@ final class Registry
             'access_log' => ['アクセスログ', '訪問履歴、検索、30日間のIP集計とメモ、選択したIPの拒否。', 'management'],
             'security_check' => ['セキュリティチェック', '20分類の対策と公開ヘッダーの確認結果を採点。', 'management'],
             'post_data' => ['投稿データ', '投稿・固定ページの情報を一覧・並び替え・CSV出力。', 'content'],
-            'site_urls' => ['サイト内URL一覧', '公開サイトのURLを収集し、記事以外の参照先を確認。', 'management'],
-
+            'site_urls' => ['サイト内URL一覧', 'CMS・拡張機能の登録URLと、公開ページの参照先を確認。', 'management'],
             'comment_manager' => ['コメント管理', '承認制コメント・スパム管理・IP拒否。', 'content'],
         ];
     }

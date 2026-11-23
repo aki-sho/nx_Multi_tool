@@ -5,6 +5,7 @@ final class Extension
 {
     public static function boot(\app\Core\Router $router): void
     {
+        RouteInventory::capture($router);
         $base = '/admin/extensions/nx_Multi_tool';
         $router->post($base . '/settings', AdminController::class . '@settings');
         $router->post($base . '/action', AdminController::class . '@action');

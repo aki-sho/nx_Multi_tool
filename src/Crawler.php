@@ -51,16 +51,49 @@ final class Crawler
         self::add($state, $base . '/', $base . '/', '開始URL');
         self::add($state, $base . '/robots.txt', $base . '/', '探索用の候補', true);
         self::add($state, $base . '/sitemap.xml', $base . '/', '探索用の候補', true);
+        $state['warnings'] = [];
+        try {
+            foreach (RouteInventory::rows() as $route) { self::registeredRoute($state, $route); }
+        } catch (\RuntimeException $exception) {
+            $state['warnings'][] = $exception->getMessage();
+        }
         Storage::transaction(self::key($run), static fn($old) => [$state, null]);
         return self::response($state);
     }
+
+    private static function registeredRoute(array &$state, array $route): void
+    {
+        $url = HttpClient::resolve(\url($route['path']), $state['base'] . '/', $state['base']);
+        if ($url === null) { return; }
+        if (isset($state['rows'][$url])) {
+            $state['rows'][$url]['registered_methods'] = $route['methods'];
+            return;
+        }
+        if (count($state['rows']) >= 10000) { $state['limited'] = true; return; }
+        $template = preg_match('/\{[a-zA-Z_]+\}/', $route['path']) === 1;
+        $state['rows'][$url] = [
+            'url' => $url, 'source' => $route['source'],
+            'method' => $route['source'] === 'NexaPress本体' ? 'CMS登録ルート' : '拡張機能の登録ルート',
+            'candidate' => false, 'http' => 0, 'original_http' => 0, 'final_url' => '', 'mime' => '',
+            'issue' => false, 'tags' => [], 'access' => '未確認',
+            'kind' => $template ? 'route' : Discovery::kind($url),
+            'status' => $template ? 'URLパターン（{ }内の値を指定して使用・HTTP未確認）' : '登録あり（HTTP未確認）',
+            'registered_methods' => $route['methods'], 'registered_only' => true,
+        ];
+    }
+
     private static function add(array &$state, string $candidate, string $source, string $method, bool $guessed = false): void
     {
         $url = HttpClient::resolve($candidate, $source, $state['base']);
         if ($url === null) { return; }
+        $registeredMethods = $state['rows'][$url]['registered_methods'] ?? null;
         if (isset($state['rows'][$url])) {
             if (!$guessed && !empty($state['rows'][$url]['candidate'])) { $state['rows'][$url]['candidate'] = false; $state['rows'][$url]['method'] = $method; $state['rows'][$url]['source'] = $source; }
-            return;
+            $row = $state['rows'][$url];
+            if (empty($row['registered_only']) || !in_array('GET', $row['registered_methods'], true)
+                || $row['kind'] === 'route' || HttpClient::protectedUrl($url, $state['base'], $state['login_path'] ?? null)) {
+                return;
+            }
         }
         if (count($state['rows']) >= 10000) { $state['limited'] = true; return; }
         $path = (string)parse_url($url, PHP_URL_PATH);
@@ -71,6 +104,7 @@ final class Crawler
         $state['rows'][$url] = ['url' => $url, 'source' => $source, 'method' => $method, 'candidate' => $guessed,
             'http' => 0, 'original_http' => 0, 'final_url' => '', 'mime' => '', 'issue' => false, 'tags' => $tags,
             'access' => '未確認', 'kind' => Discovery::kind($url), 'status' => $protected ? '管理・内部領域のため取得対象外' : (str_contains($url, '?') ? 'クエリ付きのため取得対象外' : '未取得')];
+        if ($registeredMethods !== null) { $state['rows'][$url]['registered_methods'] = $registeredMethods; }
         if (!str_contains($url, '?') && !$protected) { $state['queue'][] = $url; }
     }
     public static function step(string $run): array
@@ -130,8 +164,10 @@ final class Crawler
         // Classify the returned rows so inventories started before an extension update work too.
         foreach ($rows as &$row) {
             if (HttpClient::isAdminUrl($row['url'], $state['base'])) { $row['tags'][] = 'admin'; }
+            if (!empty($row['registered_methods'])) { $row['status'] .= ' ／ ' . implode('・', $row['registered_methods']); }
         }
         unset($row);
-        return ['run' => $state['run'], 'rows' => $rows, 'delta' => $before !== null, 'candidates' => count($state['rows']), 'requests' => $state['requests'], 'done' => $state['done'], 'limited' => $state['limited']];
+        return ['run' => $state['run'], 'rows' => $rows, 'delta' => $before !== null, 'candidates' => count($state['rows']), 'requests' => $state['requests'],
+            'done' => $state['done'], 'limited' => $state['limited'], 'warnings' => $state['warnings'] ?? []];
     }
 }

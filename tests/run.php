@@ -19,7 +19,7 @@ $adminSession = [
 ];
 $_SESSION = $adminSession;
 $_SERVER['REMOTE_ADDR'] = '192.0.2.50'; $_SERVER['REQUEST_METHOD'] = 'GET';
-check(count(NxMultiTool\Registry::all()) === 13, '13 tools');
+check(count(NxMultiTool\Registry::all()) === 12, '12 tools');
 $settings=Settings::all();check(count(array_filter($settings['tools']))===12,'all enabled');check($settings['comments_open']===false,'public comments opt in');
 rejects(fn()=>Access::text(['a'=>[]],'a',10),'reject array');rejects(fn()=>Access::integer(['a'=>'1x'],'a',0,10,1),'reject malformed integer');
 ob_start();Access::csv('fixture.csv',['式','文字'],[['=HYPERLINK("x")','日本語']]);$csv=ob_get_clean();check(str_starts_with($csv,"\xEF\xBB\xBF")&&str_contains($csv,"'=HYPERLINK"),'CSV formula protection and BOM');
@@ -167,6 +167,15 @@ Storage::transaction('settings', static fn($saved) => [array_replace($saved, ['s
 $_SERVER['HTTP_HOST'] = 'current.example.test';
 $_SERVER['HTTPS'] = 'on';
 $_SERVER['HTTP_X_FORWARDED_HOST'] = 'forwarded.example.test';
+$inventoryRouter = new \app\Core\Router();
+$inventoryRouter->get('/admin', 'app\Controllers\Admin\DashboardController@index');
+$inventoryRouter->get('/admin/settings/general', 'app\Controllers\Admin\SettingController@general');
+$inventoryRouter->post('/admin/settings/general', 'app\Controllers\Admin\SettingController@updateGeneral');
+$inventoryRouter->get('/admin/posts/edit/{id}', 'app\Controllers\Admin\PostController@edit');
+$inventoryRouter->get('/install/database', 'app\Controllers\InstallController@database');
+$inventoryRouter->get('/admin/extensions/{extensionKey}/dashboard', 'app\Controllers\Admin\ExtensionController@dashboard');
+\NxMultiTool\RouteInventory::capture($inventoryRouter);
+$inventoryRouter->post('/admin/extensions/nx_Multi_tool/action', \NxMultiTool\AdminController::class . '@action');
 $crawl=\NxMultiTool\Crawler::start();
 check(count(array_filter($crawl['rows'], static fn($row) => $row['method'] === '開始URL' && $row['url'] === 'https://current.example.test/')) === 1, 'crawler starts from the current CMS even with a legacy URL stored');
 // The standard login route is known to the CMS even on a site without any links to it.
@@ -181,6 +190,23 @@ check(in_array('admin', $loginRows[0]['tags'], true)
     && !HttpClient::isAdminUrl('https://example.test/blog/guide/admin', 'https://example.test/blog'),
     'admin filter matches the actual administration prefix including subdirectory installs');
 check(!in_array($loginUrl, Storage::read('crawl-1-' . $crawl['run'])['queue'], true), 'standard login URL is not queued for crawling');
+$routeRows = array_column($crawl['rows'], null, 'url');
+$settingsUrl = 'https://current.example.test' . url('admin/settings/general');
+check(isset($routeRows[$settingsUrl]) && $routeRows[$settingsUrl]['registered_methods'] === ['GET', 'POST']
+    && $routeRows[$settingsUrl]['method'] === 'CMS登録ルート'
+    && $routeRows[$settingsUrl]['http'] === 0 && $routeRows[$settingsUrl]['access'] === '未確認',
+    'unlinked administration routes are inventoried with their real methods and untested HTTP status');
+$templateUrl = 'https://current.example.test' . url('admin/posts/edit/{id}');
+check($routeRows[$templateUrl]['kind'] === 'route' && str_contains($routeRows[$templateUrl]['status'], 'URLパターン'),
+    'parameterized routes stay recognizable as templates instead of fabricated record URLs');
+check(isset($routeRows['https://current.example.test' . url('install/database')])
+    && isset($routeRows['https://current.example.test' . url('admin/extensions/nx_Multi_tool/action')])
+    && isset($routeRows['https://current.example.test' . url('admin/extensions/nx_Multi_tool/dashboard')]),
+    'internal routes, later extension registrations and enabled dashboards are included');
+$queued = Storage::read('crawl-1-' . $crawl['run'])['queue'];
+check(!in_array($settingsUrl, $queued, true) && !in_array($templateUrl, $queued, true)
+    && !array_intersect($queued, array_keys(array_filter($routeRows, static fn($row) => !empty($row['registered_only'])))),
+    'inventorying registration records does not queue management actions or URL templates');
 check(!isset(Settings::all()['site_url']) && Settings::all()['comments_open'], 'legacy URL ignored while other settings are read normally');
 check(count(array_filter($crawl['rows'],static fn($row)=>str_ends_with($row['url'],'/featured-only.png')&&$row['method']==='アイキャッチ'))===1,'CMS featured media reference collected');
 check(count(array_filter($crawl['rows'],static fn($row)=>str_ends_with($row['url'],'/sitemap.xml')&&$row['candidate']===true))===1,'guessed sitemap identified separately');

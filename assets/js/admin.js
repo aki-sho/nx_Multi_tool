@@ -316,12 +316,28 @@
     const render = () => {
       const visible = selected(); tbody.replaceChildren();
       visible.slice(0, 500).forEach(row => {
-        const labels={page:'ページ',css:'CSS',js:'JavaScript',image:'画像',font:'フォント',sitemap:'XML・サイトマップ',file:'ファイル'};
+        const labels={page:'ページ',route:'URLパターン',css:'CSS',js:'JavaScript',image:'画像',font:'フォント',sitemap:'XML・サイトマップ',file:'ファイル'};
         const tr = document.createElement('tr'); ['url','source','method','kind','original_http','http','final_url','status','access'].forEach(key => { const td = document.createElement('td'); td.textContent = key==='kind' ? labels[row.kind]||row.kind : key==='final_url'&&row[key]===row.url?'—':row[key] || (['http','original_http'].includes(key) ? '—' : ''); tr.append(td); }); tbody.append(tr);
       });
       root.querySelector('[data-crawl-count]').textContent = `${visible.length}件（画面は先頭500件。CSVは絞り込み後の全件）`;
     };
-    const accept = data => { run = data.run; if(data.delta){const map=new Map(rows.map(row=>[row.url,row]));data.rows.forEach(row=>map.set(row.url,row));rows=[...map.values()];}else rows=data.rows;finished = data.done; status.textContent = `${data.candidates}候補 · 通信${data.requests}回${data.done ? ' · 完了' : ''}${data.limited ? '（上限に達しました）' : ''}`; render(); };
+    const accept = data => {
+      run = data.run;
+      if (data.delta) {
+        const map = new Map(rows.map(row => [row.url, row]));
+        data.rows.forEach(row => map.set(row.url, row));
+        rows = [...map.values()];
+      } else {
+        rows = data.rows;
+      }
+      finished = data.done;
+      status.textContent = `${data.candidates}候補 · 通信${data.requests}回${data.done ? ' · 完了' : ''}${data.limited ? '（上限に達しました）' : ''}`;
+      const warning = crawler.querySelector('[data-crawl-warning]');
+      warning.textContent = (data.warnings || []).join(' ');
+      warning.hidden = !warning.textContent;
+      warning.classList.toggle('is-error', !warning.hidden);
+      render();
+    };
     const loop = async expected => {
       if (pending || pause || finished || expected !== generation) return;
       pending = true;

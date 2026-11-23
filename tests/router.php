@@ -24,6 +24,9 @@ if (str_starts_with($path, '/public/')) {
     }
 }
 $router = new \app\Core\Router();
+$router->get('/admin', \app\Controllers\Admin\DashboardController::class . '@index');
+$router->get('/admin/profile', \app\Controllers\Admin\ProfileController::class . '@index');
+$router->get('/admin/logout', \app\Controllers\Admin\AuthController::class . '@logout');
 $router->get('/', \app\Controllers\HomeController::class . '@index');
 $router->get('/admin/extensions/{extensionKey}/dashboard', \app\Controllers\Admin\ExtensionController::class . '@dashboard');
 $router->get('/admin/posts/edit/{id}', \app\Controllers\Admin\PostController::class . '@edit');

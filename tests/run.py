@@ -70,6 +70,10 @@ INSERT INTO test_extension_settings VALUES('classic-editor',1);
 INSERT INTO test_extension_settings VALUES('access-guard',1);
 INSERT INTO test_extension_settings VALUES('nx_XML_HTML_sitemap',1);
 CREATE TABLE test_navigation_items(id INTEGER PRIMARY KEY,label TEXT,url TEXT,reference_id INTEGER,type TEXT,position INTEGER);
+CREATE TABLE test_site_design(id INTEGER PRIMARY KEY,settings TEXT,updated_at TEXT);
+INSERT INTO test_site_design VALUES(1,'{}','2026-11-24');
+CREATE TABLE test_post_layouts(post_id INTEGER PRIMARY KEY,settings TEXT);
+CREATE TABLE test_page_layouts(page_id INTEGER PRIMARY KEY,settings TEXT);
 ''')
 body='<p>旧名称 と <strong>旧名称</strong>。日本語の本文です。</p><p><a href="https://old.example.com/path">リンク</a><img src="/public/uploads/test.png" alt="test"></p><pre>旧名称は変更しない</pre>'
 db.execute('INSERT INTO test_posts VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(1,'日本語テスト記事','hello',body,'説明文','published',1,1,1,'2026-11-03 10:00:00','2026-11-03 11:00:00','2026-11-03 10:00:00',None))

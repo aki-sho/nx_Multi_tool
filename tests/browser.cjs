@@ -29,7 +29,7 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
     if(process.env.NXMT_CDP_DEBUG)console.log('Browser version',await command('Browser.getVersion'));
     await command('Page.enable');await command('Runtime.enable');
     await command('Emulation.setDeviceMetricsOverride',{width:1366,height:1000,deviceScaleFactor:1,mobile:false});
-    await go('/fixture/login');check(await evaluate('document.querySelectorAll(".nxmt-card input[type=checkbox]").length===13'),'dashboard tool switches');
+    await go('/fixture/login');check(await evaluate('document.querySelectorAll(".nxmt-card input[type=checkbox]").length===12'),'dashboard tool switches');
     check(await evaluate('!document.querySelector("input[name=site_url]") && document.querySelector(".nxmt-site-info").textContent.includes("サイト名") && document.querySelector(".nxmt-site-info a").href === location.origin + "/"'),'dashboard shows CMS site information without a URL input');
     const tools=['site_links','qr','calc','bcrypt','password','timer','link_inspector','access_log','security_check','post_data','site_urls','comment_manager'];
     for(const tool of tools){await go('/admin/extensions/nx_Multi_tool/dashboard?tool='+tool);check(await evaluate('!!document.querySelector("[data-nxmt]")&&!document.querySelector(".nxmt-notice.is-error")'),'render '+tool);}
@@ -255,6 +255,12 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
       check(crawl.status===400 && crawl.json.error.includes('ポート80'),'unsupported ports are reported before crawling');
     } else {
       check(crawl.json.ok && crawl.json.data.rows.some(row=>row.method==='開始URL' && row.url===origin+'/'),'crawler uses the current CMS address');
+      check(crawl.json.data.rows.some(row => row.url === origin + '/admin/profile'
+        && row.method === 'CMS登録ルート' && row.http === 0 && row.tags.includes('admin'))
+        && crawl.json.data.rows.some(row => row.url === origin + '/admin/posts/edit/{id}' && row.kind === 'route')
+        && crawl.json.data.rows.some(row => row.url === origin + '/admin/extensions/nx_Multi_tool/dashboard')
+        && crawl.json.data.rows.some(row => row.url === origin + '/admin/extensions/nx_Multi_tool/action'
+          && row.registered_methods.join() === 'POST'), 'unlinked core and extension routes appear with methods and parameterized paths');
       let step;
       for(let i=0;i<3;i++) {
         step=await api('site_urls',{op:'step',run:crawl.json.data.run});
@@ -286,7 +292,10 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
         const mode = document.querySelector('[data-crawl-mode]');
         mode.value = 'only'; mode.dispatchEvent(new Event('input'));
       })()`);
-      check(await evaluate(`${inventoryUrls}.join() === location.origin + '/admin/login'`), 'admin checkbox can show only admin URLs');
+      check(await evaluate(`${inventoryUrls}.length > 5
+        && ${inventoryUrls}.every(url => url.startsWith(location.origin + '/admin'))
+        && ${inventoryUrls}.includes(location.origin + '/admin/profile')
+        && ${inventoryUrls}.includes(location.origin + '/admin/extensions/nx_Multi_tool/action')`), 'admin-only filter includes registered URLs without public links');
       await evaluate(`(() => {
         const mode = document.querySelector('[data-crawl-mode]');
         mode.value = 'exclude'; mode.dispatchEvent(new Event('input'));

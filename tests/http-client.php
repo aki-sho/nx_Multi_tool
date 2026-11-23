@@ -220,5 +220,27 @@ namespace {
         if ($previousBackup !== null) { file_put_contents($backup, $previousBackup); }
         elseif (is_file($backup)) { unlink($backup); }
     }
+    $_SERVER['HTTP_HOST'] = 'runtime.example.test';
+    $runtimeRouter = new \app\Core\Router();
+    $runtimeRouter->get('/runtime-public', 'app\\Controllers\\ArchiveController@search');
+    $runtimeRouter->post('/runtime-post', 'app\\Controllers\\Admin\\SettingController@updateGeneral');
+    \NxMultiTool\RouteInventory::capture($runtimeRouter);
+    $inventory = \NxMultiTool\Crawler::start();
+    $responder = static function ($handle): array {
+        return ['status' => 200, 'headers' => ['Content-Type' => 'text/html'],
+            'body' => $handle->url === 'https://runtime.example.test/blog/'
+                ? '<a href="/blog/runtime-public">Public</a><a href="/blog/runtime-post">Post operation</a>' : '<p>Public fixture</p>'];
+    };
+    $GLOBALS['nxmt_http_responses'] = array_fill(0, 20, $responder);
+    $GLOBALS['nxmt_http_calls'] = [];
+    for ($step = 0; $step < 20; $step++) {
+        $inventory = \NxMultiTool\Crawler::step($inventory['run']);
+        if ($inventory['done']) { break; }
+    }
+    $fetched = array_column($GLOBALS['nxmt_http_calls'], 'url');
+    expect($inventory['done'] && in_array('https://runtime.example.test/blog/runtime-public', $fetched, true)
+        && !in_array('https://runtime.example.test/blog/runtime-post', $fetched, true),
+        'a registered public GET is still crawled when discovered in HTML while a POST-only operation stays unrequested');
+    \NxMultiTool\Crawler::clear($inventory['run']);
     echo "HTTP and URL-discovery checks: $checks passed\n";
 }
