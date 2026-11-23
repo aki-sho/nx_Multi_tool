@@ -18,7 +18,7 @@ final class Registry
             'security_check' => ['セキュリティチェック', '20分類の対策と公開ヘッダーの確認結果を採点。', 'management'],
             'post_data' => ['投稿データ', '投稿・固定ページの情報を一覧・並び替え・CSV出力。', 'content'],
             'site_urls' => ['サイト内URL一覧', '公開サイトのURLを収集し、記事以外の参照先を確認。', 'management'],
-            'search_replace' => ['記事検索・置換', '編集画面で未保存の本文を検索・置換。', 'content'],
+
             'comment_manager' => ['コメント管理', '承認制コメント・スパム管理・IP拒否。', 'content'],
         ];
     }

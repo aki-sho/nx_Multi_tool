@@ -31,7 +31,7 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
     await command('Emulation.setDeviceMetricsOverride',{width:1366,height:1000,deviceScaleFactor:1,mobile:false});
     await go('/fixture/login');check(await evaluate('document.querySelectorAll(".nxmt-card input[type=checkbox]").length===13'),'dashboard tool switches');
     check(await evaluate('!document.querySelector("input[name=site_url]") && document.querySelector(".nxmt-site-info").textContent.includes("サイト名") && document.querySelector(".nxmt-site-info a").href === location.origin + "/"'),'dashboard shows CMS site information without a URL input');
-    const tools=['site_links','qr','calc','bcrypt','password','timer','link_inspector','access_log','security_check','post_data','site_urls','search_replace','comment_manager'];
+    const tools=['site_links','qr','calc','bcrypt','password','timer','link_inspector','access_log','security_check','post_data','site_urls','comment_manager'];
     for(const tool of tools){await go('/admin/extensions/nx_Multi_tool/dashboard?tool='+tool);check(await evaluate('!!document.querySelector("[data-nxmt]")&&!document.querySelector(".nxmt-notice.is-error")'),'render '+tool);}
     const logRoute = '/admin/extensions/nx_Multi_tool/dashboard?tool=access_log';
     await go(logRoute);
@@ -301,17 +301,11 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
     }
     check((await api('site_urls',{op:'list',run:'../escape'})).status===400,'invalid run ID rejected');
     check(await evaluate('document.querySelectorAll("[data-crawl-table] th").length===9&&!!document.querySelector("[data-crawl-type]")'),'crawler classifications and redirect columns');
-    await go('/admin/posts/edit/1');await waitFor('!!document.querySelector("[data-nxmt-editor]")');
+    await go('/admin/posts/edit/1');
     check(await evaluate('!!document.querySelector(".classic-editor-content")'),'real Classic Editor active');
-    await evaluate(`const panel=document.querySelector('[data-nxmt-editor]');panel.open=true;panel.querySelector('[data-find]').value='旧名称';panel.querySelector('[data-replace]').value='新名称';panel.querySelector('[data-scan]').click()`);await waitFor('document.querySelector("[data-status]").textContent.includes("3件")');
-    await evaluate(`document.querySelector('[data-all]').click()`);check(await evaluate('document.querySelector("textarea#content").value.includes("新名称")&&document.querySelector("textarea#content").value.includes("https://old.example.com/path")'),'editor replacement preserves link attributes');
-    await evaluate(`document.querySelector('[data-undo]').click()`);check(await evaluate('document.querySelector(".classic-editor-content").innerHTML.includes("旧名称 と")'),'editor undo');
-    await evaluate(`document.querySelector('[data-editor-mode=html]').click();const input=document.querySelector('textarea#content');input.value='<p>旧名称 と <strong>旧名称</strong></p><pre>旧名称は変更しない</pre>';input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('[data-scan]').click()`);await waitFor('document.querySelector("[data-status]").textContent.includes("2件")');
-    await evaluate(`document.querySelector('[data-all]').click()`);check(await evaluate('document.querySelector("textarea#content").value.includes("<pre>旧名称は変更しない</pre>")&&document.querySelector("textarea#content").value.includes("新名称")'),'HTML mode code protection');
-    await evaluate(`document.querySelector('[data-undo]').click()`);
-    await evaluate(`document.querySelector('[data-find]').value='旧.称';document.querySelector('[data-regex]').checked=true;document.querySelector('[data-scan]').click()`);await waitFor('document.querySelector("[data-status]").textContent.includes("2件")');check(true,'regex worker');
-    await command('Page.handleJavaScriptDialog',{accept:true}).catch(()=>{});
-    await go('/admin/pages/edit/1');check(await evaluate('!!document.querySelector("[data-nxmt-editor]")'),'page editor integration');
+    check(await evaluate('!document.querySelector("[data-nxmt-editor]")'),'post editor no longer includes the replacement panel');
+    await go('/admin/pages/edit/1');
+    check(await evaluate('!document.querySelector("[data-nxmt-editor]")'),'page editor no longer includes the replacement panel');
     await go('/admin/extensions/nx_Multi_tool/dashboard');
     const screenshot=await command('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});fs.writeFileSync(process.env.NXMT_BROWSER_OUTPUT||path.join(__dirname,'.runtime/dashboard.png'),Buffer.from(screenshot.data,'base64'));
     await evaluate(`document.querySelector('input[name="tools[]"][value=password]').checked=false;document.querySelector('.nxmt-settings').requestSubmit()`);await waitFor('document.readyState==="complete"');await delay(100);

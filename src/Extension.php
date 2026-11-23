@@ -25,12 +25,7 @@ final class Extension
                 if (str_contains($path, '/admin/extensions/nx_Multi_tool/dashboard')) {
                     echo '<script src="' . \e(Registry::asset('admin.js')) . '" defer></script>';
                 }
-                if (Settings::enabled('search_replace') && \app\Core\Permission::can('extensions.manage')
-                    && preg_match('#/admin/(posts|pages)/(create|edit/[0-9]+)/?$#', $path)) {
-                    foreach (['editor-engine.js', 'editor.js'] as $asset) {
-                        echo '<script src="' . \e(Registry::asset($asset)) . '" defer></script>';
-                    }
-                }
+
             });
             \add_action('nx_head', static function (): void {
                 if (!Settings::enabled('comment_manager') || !Settings::all()['comments_open']) { return; }

@@ -20,7 +20,7 @@ $adminSession = [
 $_SESSION = $adminSession;
 $_SERVER['REMOTE_ADDR'] = '192.0.2.50'; $_SERVER['REQUEST_METHOD'] = 'GET';
 check(count(NxMultiTool\Registry::all()) === 13, '13 tools');
-$settings=Settings::all();check(count(array_filter($settings['tools']))===13,'all enabled');check($settings['comments_open']===false,'public comments opt in');
+$settings=Settings::all();check(count(array_filter($settings['tools']))===12,'all enabled');check($settings['comments_open']===false,'public comments opt in');
 rejects(fn()=>Access::text(['a'=>[]],'a',10),'reject array');rejects(fn()=>Access::integer(['a'=>'1x'],'a',0,10,1),'reject malformed integer');
 ob_start();Access::csv('fixture.csv',['式','文字'],[['=HYPERLINK("x")','日本語']]);$csv=ob_get_clean();check(str_starts_with($csv,"\xEF\xBB\xBF")&&str_contains($csv,"'=HYPERLINK"),'CSV formula protection and BOM');
 $settingsFile=Storage::directory().'/settings.json';$original=is_file($settingsFile)?file_get_contents($settingsFile):null;

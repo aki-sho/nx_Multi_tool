@@ -12,6 +12,7 @@ final class Settings
         unset($saved['site_url']);
         $settings = array_replace($defaults, $saved);
         if (!is_array($settings['tools']) || !is_array($settings['allow_ips'])) { throw new \RuntimeException('設定の形式が不正です。'); }
+        $settings['tools'] = array_intersect_key($settings['tools'], $defaults['tools']);
         foreach ($defaults['tools'] as $id => $on) {
             $settings['tools'][$id] = array_key_exists($id, $settings['tools']) ? $settings['tools'][$id] === true : $on;
         }
