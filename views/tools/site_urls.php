@@ -12,8 +12,10 @@
         <label><input type="checkbox" data-crawl-kind="image_redirect">画像への転送</label>
         <label><input type="checkbox" data-crawl-kind="attachment">添付ページ形式</label>
         <label><input type="checkbox" data-crawl-kind="admin">admin配下</label>
+        <label><input type="checkbox" data-crawl-kind="viewer_page">閲覧者向けページ</label>
         <label><input type="checkbox" data-crawl-issues>要確認の結果だけ表示</label>
     </div>
+    <p class="nxmt-muted">「閲覧者向けページ」は、トップ・投稿・固定ページ・各一覧・検索結果・HTMLサイトマップなどが対象です。チェックして「対象の扱い」で除外／限定表示を選べます。</p>
     <p class="nxmt-muted">robots.txt・sitemap.xmlは探索用の候補も確認します。候補の404は「未検出」とし、実際のリンク切れと区別します。アクセス条件は未ログインでの取得結果で、安全性の判定ではありません。</p>
     <p class="nxmt-muted">収集を始めるたびに現在のログインURLを「CMS設定（ログイン）」として表示します。HTTP欄の「—」は未確認です。</p>
     <p class="nxmt-muted">管理画面などの登録URLはCMS内部から取得し、確認結果にGET・POSTを表示します。IDなどの指定が必要なURLは「URLパターン」で表示します。登録情報だけの行はHTTP応答とアクセス条件が未確認です。</p>

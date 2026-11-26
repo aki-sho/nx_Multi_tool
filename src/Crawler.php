@@ -30,7 +30,7 @@ final class Crawler
             }
         }
         $run = bin2hex(random_bytes(16));
-        $state = ['run' => $run, 'base' => $base, 'login_path' => SiteInfo::loginPath(), 'created' => time(), 'rows' => [], 'queue' => [], 'visited' => [], 'requests' => 0, 'excluded' => [], 'done' => false, 'limited' => false];
+        $state = ['run' => $run, 'base' => $base, 'login_path' => SiteInfo::loginPath(), 'created' => time(), 'rows' => [], 'queue' => [], 'visited' => [], 'requests' => 0, 'content_pages' => [], 'done' => false, 'limited' => false];
         self::add($state, \url($state['login_path']), $base . '/', 'CMS設定（ログイン）');
         foreach (['post', 'page'] as $type) {
             for ($offset = 0; $offset < 10000; $offset += 200) {
@@ -38,7 +38,7 @@ final class Crawler
                 foreach ($page['rows'] as $item) {
                     $url = HttpClient::resolve(Content::url($type, $item), $base . '/', $base);
                     if (!$url) { continue; }
-                    $state['excluded'][$url] = true; self::add($state, $url, $base . '/', '記事URL');
+                    $state['content_pages'][$url] = true; self::add($state, $url, $base . '/', $type === 'post' ? 'CMS設定（投稿）' : 'CMS設定（固定ページ）');
                     foreach (Discovery::html((string)$item['content']) as $link) { self::add($state, $link['url'], $url, '保存本文'); }
                     if (!empty($item['featured_media_path'])) {
                         $mediaUrl = \public_url(preg_replace('#^public/#', '', ltrim((string)$item['featured_media_path'], '/')));
@@ -67,6 +67,7 @@ final class Crawler
         if ($url === null) { return; }
         if (isset($state['rows'][$url])) {
             $state['rows'][$url]['registered_methods'] = $route['methods'];
+            $state['rows'][$url]['registered_viewer_page'] = !empty($route['viewer_page']);
             return;
         }
         if (count($state['rows']) >= 10000) { $state['limited'] = true; return; }
@@ -79,6 +80,7 @@ final class Crawler
             'kind' => $template ? 'route' : Discovery::kind($url),
             'status' => $template ? 'URLパターン（{ }内の値を指定して使用・HTTP未確認）' : '登録あり（HTTP未確認）',
             'registered_methods' => $route['methods'], 'registered_only' => true,
+            'registered_viewer_page' => !empty($route['viewer_page']),
         ];
     }
 
@@ -87,6 +89,7 @@ final class Crawler
         $url = HttpClient::resolve($candidate, $source, $state['base']);
         if ($url === null) { return; }
         $registeredMethods = $state['rows'][$url]['registered_methods'] ?? null;
+        $registeredViewerPage = !empty($state['rows'][$url]['registered_viewer_page']);
         if (isset($state['rows'][$url])) {
             if (!$guessed && !empty($state['rows'][$url]['candidate'])) { $state['rows'][$url]['candidate'] = false; $state['rows'][$url]['method'] = $method; $state['rows'][$url]['source'] = $source; }
             $row = $state['rows'][$url];
@@ -104,7 +107,10 @@ final class Crawler
         $state['rows'][$url] = ['url' => $url, 'source' => $source, 'method' => $method, 'candidate' => $guessed,
             'http' => 0, 'original_http' => 0, 'final_url' => '', 'mime' => '', 'issue' => false, 'tags' => $tags,
             'access' => '未確認', 'kind' => Discovery::kind($url), 'status' => $protected ? '管理・内部領域のため取得対象外' : (str_contains($url, '?') ? 'クエリ付きのため取得対象外' : '未取得')];
-        if ($registeredMethods !== null) { $state['rows'][$url]['registered_methods'] = $registeredMethods; }
+        if ($registeredMethods !== null) {
+            $state['rows'][$url]['registered_methods'] = $registeredMethods;
+            $state['rows'][$url]['registered_viewer_page'] = $registeredViewerPage;
+        }
         if (!str_contains($url, '?') && !$protected) { $state['queue'][] = $url; }
     }
     public static function step(string $run): array
@@ -159,11 +165,19 @@ final class Crawler
     public static function clear(string $run): void { Storage::delete(self::key($run)); }
     private static function response(array $state, ?array $before = null): array
     {
-        $rows = array_values(array_filter($state['rows'], static fn($row) => !isset($state['excluded'][$row['url']])
-            && ($before === null || !isset($before[$row['url']]) || $before[$row['url']] !== $row)));
+        $rows = array_values(array_filter($state['rows'], static fn($row) => $before === null || !isset($before[$row['url']]) || $before[$row['url']] !== $row));
         // Classify the returned rows so inventories started before an extension update work too.
         foreach ($rows as &$row) {
             if (HttpClient::isAdminUrl($row['url'], $state['base'])) { $row['tags'][] = 'admin'; }
+            $pageUrl = explode('?', $row['url'], 2)[0];
+            $knownPage = isset($state['content_pages'][$pageUrl]) || isset($state['excluded'][$pageUrl])
+                || rtrim($pageUrl, '/') === $state['base'] || !empty($row['registered_viewer_page'])
+                || !empty($state['rows'][rtrim($pageUrl, '/')]['registered_viewer_page']);
+            $htmlPage = empty($row['candidate']) && $row['kind'] === 'page' && str_contains(strtolower($row['mime'] ?? ''), 'html')
+                && $row['http'] >= 200 && $row['http'] < 300 && $row['access'] === '未ログインで取得可';
+            if (($knownPage || $htmlPage) && !HttpClient::protectedUrl($row['url'], $state['base'], $state['login_path'] ?? null)) {
+                $row['tags'][] = 'viewer_page';
+            }
             if (!empty($row['registered_methods'])) { $row['status'] .= ' ／ ' . implode('・', $row['registered_methods']); }
         }
         unset($row);

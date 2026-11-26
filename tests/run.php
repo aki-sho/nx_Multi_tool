@@ -168,6 +168,11 @@ $_SERVER['HTTP_HOST'] = 'current.example.test';
 $_SERVER['HTTPS'] = 'on';
 $_SERVER['HTTP_X_FORWARDED_HOST'] = 'forwarded.example.test';
 $inventoryRouter = new \app\Core\Router();
+$inventoryRouter->get('/', 'app\Controllers\HomeController@index');
+$inventoryRouter->get('/posts', 'app\Controllers\ArchiveController@index');
+$inventoryRouter->get('/search', 'app\Controllers\ArchiveController@search');
+$inventoryRouter->get('/category/{slug}', 'app\Controllers\ArchiveController@category');
+$inventoryRouter->get('/sitemap', 'NexaPressXmlHtmlSitemap\Controller\HtmlSitemapController@index');
 $inventoryRouter->get('/admin', 'app\Controllers\Admin\DashboardController@index');
 $inventoryRouter->get('/admin/settings/general', 'app\Controllers\Admin\SettingController@general');
 $inventoryRouter->post('/admin/settings/general', 'app\Controllers\Admin\SettingController@updateGeneral');
@@ -191,6 +196,21 @@ check(in_array('admin', $loginRows[0]['tags'], true)
     'admin filter matches the actual administration prefix including subdirectory installs');
 check(!in_array($loginUrl, Storage::read('crawl-1-' . $crawl['run'])['queue'], true), 'standard login URL is not queued for crawling');
 $routeRows = array_column($crawl['rows'], null, 'url');
+foreach (['/', '/posts', '/search', '/category/{slug}', '/sitemap'] as $viewerPath) {
+    check(in_array('viewer_page', $routeRows['https://current.example.test' . url($viewerPath)]['tags'], true),
+        'known visitor page can be filtered before HTTP: ' . $viewerPath);
+}
+foreach (['post', 'page'] as $contentType) {
+    $contentItem = Content::find($contentType, 1);
+    $contentUrl = 'https://current.example.test' . Content::url($contentType, $contentItem);
+    check(isset($routeRows[$contentUrl]) && in_array('viewer_page', $routeRows[$contentUrl]['tags'], true),
+        'published ' . $contentType . ' is included instead of being unconditionally hidden');
+}
+check(!in_array('viewer_page', $loginRows[0]['tags'], true)
+    && !in_array('viewer_page', $routeRows['https://current.example.test' . url('install/database')]['tags'], true)
+    && !in_array('viewer_page', $routeRows['https://current.example.test' . url('admin/settings/general')]['tags'], true)
+    && !in_array('viewer_page', $routeRows['https://current.example.test/sitemap.xml']['tags'], true),
+    'login, administration, installation and XML sitemap are outside visitor pages');
 $settingsUrl = 'https://current.example.test' . url('admin/settings/general');
 check(isset($routeRows[$settingsUrl]) && $routeRows[$settingsUrl]['registered_methods'] === ['GET', 'POST']
     && $routeRows[$settingsUrl]['method'] === 'CMS登録ルート'

@@ -33,16 +33,17 @@ final class RouteInventory
                 if (!is_string($path) || !str_starts_with($path, '/') || !is_string($action)) { continue; }
                 $source = self::source($action, $extensions);
                 if (!isset($rows[$path])) {
-                    $rows[$path] = ['path' => $path, 'methods' => [], 'sources' => []];
+                    $rows[$path] = ['path' => $path, 'methods' => [], 'sources' => [], 'viewer_page' => false];
                 }
                 $rows[$path]['methods'][$method] = true;
                 $rows[$path]['sources'][$source] = true;
+                if ($method === 'GET' && self::viewerAction($action)) { $rows[$path]['viewer_page'] = true; }
                 if ($method === 'GET' && $path === '/admin/extensions/{extensionKey}/dashboard') {
                     foreach ($extensions as $extension) {
                         if (empty($extension['has_dashboard']) || !empty($extension['compatibility_issues'])) { continue; }
                         $dashboard = '/admin/extensions/' . rawurlencode($extension['key']) . '/dashboard';
                         $rows[$dashboard] = ['path' => $dashboard, 'methods' => ['GET' => true],
-                            'sources' => [$extension['name'] => true]];
+                            'sources' => [$extension['name'] => true], 'viewer_page' => false];
                     }
                 }
             }
@@ -55,6 +56,21 @@ final class RouteInventory
         }
         unset($row);
         return array_values($rows);
+    }
+
+    private static function viewerAction(string $action): bool
+    {
+        return in_array($action, [
+            'app\\Controllers\\HomeController@index',
+            'app\\Controllers\\PostController@show',
+            'app\\Controllers\\PostController@showPlain',
+            'app\\Controllers\\PostController@showByCategory',
+            'app\\Controllers\\PageController@show',
+            'app\\Controllers\\ArchiveController@index',
+            'app\\Controllers\\ArchiveController@search',
+            'app\\Controllers\\ArchiveController@category',
+            'NexaPressXmlHtmlSitemap\\Controller\\HtmlSitemapController@index',
+        ], true);
     }
 
     private static function source(string $action, array $extensions): string

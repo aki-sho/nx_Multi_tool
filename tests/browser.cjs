@@ -301,6 +301,36 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
         mode.value = 'exclude'; mode.dispatchEvent(new Event('input'));
         document.querySelector('[data-crawl-kind="admin"]').click();
       })()`);
+      const viewerUrls = crawl.json.data.rows.filter(row => row.tags.includes('viewer_page')).map(row => row.url).sort();
+      check(viewerUrls.includes(origin + '/post/hello') && viewerUrls.includes(origin + '/page/about')
+        && viewerUrls.includes(origin + '/sitemap'), 'content pages and the HTML sitemap are included in the visitor-page group');
+      await evaluate(`document.querySelector('[data-crawl-kind="viewer_page"]').click()`);
+      check(await evaluate(`${inventoryUrls}.every(url => !${JSON.stringify(viewerUrls)}.includes(url))
+        && ${inventoryUrls}.includes(location.origin + '/admin/profile')`), 'visitor-page exclusion keeps internal and administration URLs');
+      await evaluate(`(() => {
+        const mode = document.querySelector('[data-crawl-mode]');
+        mode.value = 'only'; mode.dispatchEvent(new Event('input'));
+      })()`);
+      check(await evaluate(`JSON.stringify(${inventoryUrls}.sort()) === ${JSON.stringify(JSON.stringify(viewerUrls))}`),
+        'visitor-only mode shows all and only the classified visitor pages');
+      await evaluate(`(() => {
+        const create = URL.createObjectURL, click = HTMLAnchorElement.prototype.click;
+        URL.createObjectURL = blob => { window.viewerCsv = blob.text(); return create.call(URL, blob); };
+        HTMLAnchorElement.prototype.click = function () {};
+        try { document.querySelector('[data-crawl-csv]').click(); }
+        finally { URL.createObjectURL = create; HTMLAnchorElement.prototype.click = click; }
+      })()`);
+      check(await evaluate(`window.viewerCsv.then(csv => csv.includes(location.origin + '/post/hello')
+        && csv.includes(location.origin + '/page/about') && !csv.includes(location.origin + '/admin/profile'))`),
+        'CSV export follows the visitor-page filter');
+      await go('/admin/extensions/nx_Multi_tool/dashboard?tool=site_urls');
+      check(await evaluate(`document.querySelector('[data-crawl-kind="viewer_page"]').checked
+        && document.querySelector('[data-crawl-mode]').value === 'only'`), 'visitor filter selection survives reloading');
+      await evaluate(`(() => {
+        const mode = document.querySelector('[data-crawl-mode]');
+        mode.value = 'exclude'; mode.dispatchEvent(new Event('input'));
+        document.querySelector('[data-crawl-kind="viewer_page"]').click();
+      })()`);
       await setLoginUrl('inventory-login-test', true);
       await collectLoginUrl('/inventory-login-test','recollect reflects the changed login URL');
       await setLoginUrl('inventory-login-next', true);

@@ -227,13 +227,24 @@ namespace {
     \NxMultiTool\RouteInventory::capture($runtimeRouter);
     $inventory = \NxMultiTool\Crawler::start();
     $responder = static function ($handle): array {
-        return ['status' => 200, 'headers' => ['Content-Type' => 'text/html'],
-            'body' => $handle->url === 'https://runtime.example.test/blog/'
-                ? '<a href="/blog/runtime-public">Public</a><a href="/blog/runtime-post">Post operation</a>' : '<p>Public fixture</p>'];
+        $path = parse_url($handle->url, PHP_URL_PATH);
+        if ($path === '/blog/runtime-api') { return ['status'=>200, 'headers'=>['Content-Type'=>'application/json'], 'body'=>'{"ok":true}']; }
+        if ($path === '/blog/runtime-login') { return ['status'=>200, 'headers'=>['Content-Type'=>'text/html'], 'body'=>'<form><input type="password"></form>']; }
+        if ($path === '/blog/runtime-style.css') { return ['status'=>200, 'headers'=>['Content-Type'=>'text/css'], 'body'=>'body{}']; }
+        if ($path === '/blog/runtime-missing') { return ['status'=>404, 'headers'=>['Content-Type'=>'text/html'], 'body'=>'<p>Not found</p>']; }
+        if ($path === '/blog/robots.txt') { return ['status'=>404, 'headers'=>['Content-Type'=>'text/plain']]; }
+        if ($path === '/blog/sitemap.xml') { return ['status'=>200, 'headers'=>['Content-Type'=>'application/xml'], 'body'=>'<urlset/>']; }
+        $links = '';
+        foreach (['public', 'post', 'extra', 'api', 'login', 'style.css', 'missing'] as $suffix) {
+            $links .= '<a href="/blog/runtime-' . $suffix . '">Fixture</a>';
+        }
+        $links .= '<a href="/blog/runtime-public?q=fixture">Search results</a>';
+        return ['status'=>200, 'headers'=>['Content-Type'=>'text/html'],
+            'body'=>$path === '/blog/' ? $links : '<p>Public fixture</p>'];
     };
-    $GLOBALS['nxmt_http_responses'] = array_fill(0, 20, $responder);
+    $GLOBALS['nxmt_http_responses'] = array_fill(0, 40, $responder);
     $GLOBALS['nxmt_http_calls'] = [];
-    for ($step = 0; $step < 20; $step++) {
+    for ($step = 0; $step < 40; $step++) {
         $inventory = \NxMultiTool\Crawler::step($inventory['run']);
         if ($inventory['done']) { break; }
     }
@@ -241,6 +252,18 @@ namespace {
     expect($inventory['done'] && in_array('https://runtime.example.test/blog/runtime-public', $fetched, true)
         && !in_array('https://runtime.example.test/blog/runtime-post', $fetched, true),
         'a registered public GET is still crawled when discovered in HTML while a POST-only operation stays unrequested');
+    $complete = \NxMultiTool\Crawler::read($inventory['run']);
+    $pages = array_column($complete['rows'], null, 'url');
+    expect(in_array('viewer_page', $pages['https://runtime.example.test/blog/runtime-public']['tags'], true)
+        && in_array('viewer_page', $pages['https://runtime.example.test/blog/runtime-extra']['tags'], true),
+        'registered and newly discovered public HTML pages share the visitor-page filter');
+    $queryUrl = 'https://runtime.example.test/blog/runtime-public?q=%5Bredacted%5D';
+    expect(in_array('viewer_page', $pages[$queryUrl]['tags'], true) && !in_array($queryUrl, $fetched, true),
+        'search parameters keep the known page classification without being requested or exposing query values');
+    foreach (['post', 'api', 'login', 'style.css', 'missing'] as $suffix) {
+        expect(!in_array('viewer_page', $pages['https://runtime.example.test/blog/runtime-' . $suffix]['tags'], true),
+            'a non-page endpoint or non-success response is not a visitor page: ' . $suffix);
+    }
     \NxMultiTool\Crawler::clear($inventory['run']);
     echo "HTTP and URL-discovery checks: $checks passed\n";
 }
