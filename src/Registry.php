@@ -3,7 +3,7 @@ namespace NxMultiTool;
 
 final class Registry
 {
-    public const VERSION = '1.1.6';
+    public const VERSION = '1.1.7';
     public static function all(): array
     {
         return [

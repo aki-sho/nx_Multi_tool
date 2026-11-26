@@ -3,6 +3,24 @@ namespace NxMultiTool;
 
 final class Discovery
 {
+    public static function title(string $html, string $contentType = ''): string
+    {
+        if (trim($html) === '') { return ''; }
+        if (preg_match('/charset\s*=\s*["\']?([a-z0-9._-]+)/i', $contentType, $charset)
+            || preg_match('/<meta\b[^>]*\bcharset\s*=\s*["\']?([a-z0-9._-]+)/i', substr($html, 0, 4096), $charset)) {
+            try { $html = mb_convert_encoding($html, 'UTF-8', $charset[1]); }
+            catch (\ValueError $exception) { return ''; }
+        }
+        // Keep DOMDocument from reinterpreting the converted bytes using the original meta charset.
+        $html = preg_replace('/(<meta\b[^>]*\bcharset\s*=\s*["\']?)[a-z0-9._-]+/i', '${1}UTF-8', $html) ?? $html;
+        $dom = new \DOMDocument(); $previous = libxml_use_internal_errors(true);
+        $loaded = $dom->loadHTML('<?xml encoding="UTF-8">' . $html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
+        libxml_clear_errors(); libxml_use_internal_errors($previous);
+        if (!$loaded) { return ''; }
+        $title = $dom->getElementsByTagName('title')->item(0);
+        return $title === null ? '' : mb_substr(trim(preg_replace('/\s+/u', ' ', $title->textContent) ?? ''), 0, 500, 'UTF-8');
+    }
+
     /** Collect references without executing scripts, styles or external entities. */
     public static function html(string $html): array
     {

@@ -77,8 +77,9 @@ CREATE TABLE test_page_layouts(page_id INTEGER PRIMARY KEY,settings TEXT);
 ''')
 body='<p>旧名称 と <strong>旧名称</strong>。日本語の本文です。</p><p><a href="https://old.example.com/path">リンク</a><img src="/public/uploads/test.png" alt="test"></p><pre>旧名称は変更しない</pre>'
 db.execute('INSERT INTO test_posts VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(1,'日本語テスト記事','hello',body,'説明文','published',1,1,1,'2026-11-03 10:00:00','2026-11-03 11:00:00','2026-11-03 10:00:00',None))
-db.execute('INSERT INTO test_posts VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(2,'下書き記事','draft',body,'下書き','draft',1,1,None,'2026-11-03','2026-11-03',None,None))
+db.execute('INSERT INTO test_posts VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(2,'下書き記事','draft',body + '<a href="/draft-only-link">下書き内のリンク</a>','下書き','draft',1,1,None,'2026-11-03','2026-11-03',None,None))
 db.execute('INSERT INTO test_pages VALUES(?,?,?,?,?,?,?,?,?,?)',(1,'固定ページ','about',body,'published',1,'2026-11-03','2026-11-03','2026-11-03',None))
+db.execute('INSERT INTO test_pages VALUES(?,?,?,?,?,?,?,?,?,?)',(2,'下書き固定ページ','draft-page','<p>未公開</p><a href="/draft-page-only-link">内部リンク</a>','draft',1,'2026-11-26','2026-11-26',None,None))
 db.execute('INSERT INTO test_media VALUES(1,?,?,?,?,?,?,?,?,?,?,?)',('public/uploads/featured-only.png','画像','説明','featured-only.png','featured-only.png','image/png',100,'image',1,'2026-11-03','2026-11-03'))
 db.commit();db.close()
 for path in root.rglob('*.php'):

@@ -270,11 +270,11 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
 
       const collectLoginUrl = async (loginPath, label) => {
         const expected = JSON.stringify(origin + loginPath);
-        const loginRows = 'Array.from(document.querySelectorAll("[data-crawl-table] tbody tr")).filter(row => row.cells[2].textContent === "CMS設定（ログイン）")';
+        const loginRows = 'Array.from(document.querySelectorAll("[data-crawl-table] tbody tr")).filter(row => row.cells[4].textContent === "CMS設定（ログイン）")';
         await evaluate('document.querySelector("[data-crawl-start]").click()');
         await waitFor('document.querySelector("[data-crawl-status]").textContent.includes("完了") && '
           + loginRows + '.some(row => row.cells[0].textContent === ' + expected + ')');
-        check(await evaluate('(' + loginRows + ').length === 1 && (' + loginRows + ')[0].cells[5].textContent === "—"'), label);
+        check(await evaluate('(' + loginRows + ').length === 1 && (' + loginRows + ')[0].cells[7].textContent === "—"'), label);
       };
       const setLoginUrl = async (slug, enabled) => {
         check(await evaluate('(async () => {'
@@ -284,6 +284,44 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
           + 'return response.ok && (await response.text()).includes("ログインページ変更設定を保存しました");})()'), 'Access Guard saved login settings');
       };
       await collectLoginUrl('/admin/login','the initial inventory lists the standard login URL without an HTTP result');
+      check(await evaluate(`(() => {
+        const rows = Array.from(document.querySelectorAll('[data-crawl-table] tbody tr'));
+        const find = path => rows.find(row => row.cells[0].textContent === location.origin + path);
+        return find('/post/hello').cells[1].textContent === '日本語テスト記事'
+          && find('/post/hello').cells[2].textContent === '公開'
+          && find('/post/draft').cells[1].textContent === '下書き記事'
+          && find('/post/draft').cells[2].textContent === '下書き'
+          && find('/page/draft-page').cells[2].textContent === '下書き'
+          && find('/page/draft-page').cells[7].textContent === '—'
+          && find('/admin/profile').cells[1].textContent === ''
+          && find('/admin/profile').cells[2].textContent === '';
+      })()`), 'new title and publication columns show saved metadata and leave unavailable values blank');
+      await evaluate(`(() => {
+        const search = document.querySelector('[data-crawl-search]');
+        search.value = '下書き'; search.dispatchEvent(new Event('input'));
+      })()`);
+      check(await evaluate(`(() => {
+        const rows = Array.from(document.querySelectorAll('[data-crawl-table] tbody tr'));
+        return rows.length === 2 && rows.every(row => row.cells[2].textContent === '下書き');
+      })()`), 'publication status can be searched');
+      await evaluate(`(() => {
+        const search = document.querySelector('[data-crawl-search]');
+        search.value = '日本語テスト記事'; search.dispatchEvent(new Event('input'));
+      })()`);
+      check(await evaluate(`document.querySelectorAll('[data-crawl-table] tbody tr').length === 1
+        && document.querySelector('[data-crawl-table] tbody tr').cells[0].textContent === location.origin + '/post/hello'`),
+        'page titles can be searched');
+      await evaluate(`(() => {
+        const search = document.querySelector('[data-crawl-search]');
+        search.value = ''; search.dispatchEvent(new Event('input'));
+      })()`);
+      for (const [field, index] of [['title',1], ['content_status',2]]) {
+        await evaluate(`document.querySelector('[data-crawl-sort="${field}"]').click()`);
+        check(await evaluate(`(() => {
+          const values = Array.from(document.querySelectorAll('[data-crawl-table] tbody tr'), row => row.cells[${index}].textContent);
+          return values.every((value,index) => index === 0 || values[index - 1].localeCompare(value,'ja',{numeric:true}) <= 0);
+        })()`), 'new column can be sorted: ' + field);
+      }
       const inventoryUrls = `Array.from(document.querySelectorAll('[data-crawl-table] tbody tr'), row => row.cells[0].textContent)`;
       await evaluate(`document.querySelector('[data-crawl-kind="admin"]').click()`);
       check(await evaluate(`!${inventoryUrls}.includes(location.origin + '/admin/login')
@@ -321,7 +359,10 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
         finally { URL.createObjectURL = create; HTMLAnchorElement.prototype.click = click; }
       })()`);
       check(await evaluate(`window.viewerCsv.then(csv => csv.includes(location.origin + '/post/hello')
-        && csv.includes(location.origin + '/page/about') && !csv.includes(location.origin + '/admin/profile'))`),
+        && csv.includes(location.origin + '/page/about') && !csv.includes(location.origin + '/admin/profile')
+        && csv.includes('"URL","ページタイトル","ステータス"')
+        && csv.includes('"' + location.origin + '/post/draft","下書き記事","下書き"')
+        && csv.includes('"' + location.origin + '/","",""'))`),
         'CSV export follows the visitor-page filter');
       await go('/admin/extensions/nx_Multi_tool/dashboard?tool=site_urls');
       check(await evaluate(`document.querySelector('[data-crawl-kind="viewer_page"]').checked
@@ -339,7 +380,7 @@ const api = (tool,fields={},csrf=true)=>evaluate(`(async()=>{const form=new Form
       await collectLoginUrl('/admin/login','turning off the URL change restores the standard login URL');
     }
     check((await api('site_urls',{op:'list',run:'../escape'})).status===400,'invalid run ID rejected');
-    check(await evaluate('document.querySelectorAll("[data-crawl-table] th").length===9&&!!document.querySelector("[data-crawl-type]")'),'crawler classifications and redirect columns');
+    check(await evaluate('document.querySelectorAll("[data-crawl-table] th").length===11&&!!document.querySelector("[data-crawl-type]")'),'crawler classifications, page metadata and redirect columns');
     await go('/admin/posts/edit/1');
     check(await evaluate('!!document.querySelector(".classic-editor-content")'),'real Classic Editor active');
     check(await evaluate('!document.querySelector("[data-nxmt-editor]")'),'post editor no longer includes the replacement panel');

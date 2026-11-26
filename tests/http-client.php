@@ -229,9 +229,9 @@ namespace {
     $responder = static function ($handle): array {
         $path = parse_url($handle->url, PHP_URL_PATH);
         if ($path === '/blog/runtime-api') { return ['status'=>200, 'headers'=>['Content-Type'=>'application/json'], 'body'=>'{"ok":true}']; }
-        if ($path === '/blog/runtime-login') { return ['status'=>200, 'headers'=>['Content-Type'=>'text/html'], 'body'=>'<form><input type="password"></form>']; }
+        if ($path === '/blog/runtime-login') { return ['status'=>200, 'headers'=>['Content-Type'=>'text/html'], 'body'=>'<title>ログイン</title><form><input type="password"></form>']; }
         if ($path === '/blog/runtime-style.css') { return ['status'=>200, 'headers'=>['Content-Type'=>'text/css'], 'body'=>'body{}']; }
-        if ($path === '/blog/runtime-missing') { return ['status'=>404, 'headers'=>['Content-Type'=>'text/html'], 'body'=>'<p>Not found</p>']; }
+        if ($path === '/blog/runtime-missing') { return ['status'=>404, 'headers'=>['Content-Type'=>'text/html'], 'body'=>'<title>見つかりません</title><p>Not found</p>']; }
         if ($path === '/blog/robots.txt') { return ['status'=>404, 'headers'=>['Content-Type'=>'text/plain']]; }
         if ($path === '/blog/sitemap.xml') { return ['status'=>200, 'headers'=>['Content-Type'=>'application/xml'], 'body'=>'<urlset/>']; }
         $links = '';
@@ -239,8 +239,9 @@ namespace {
             $links .= '<a href="/blog/runtime-' . $suffix . '">Fixture</a>';
         }
         $links .= '<a href="/blog/runtime-public?q=fixture">Search results</a>';
+        $links .= '<a href="/blog/post/draft">Draft post</a><a href="/blog/page/draft-page">Draft page</a>';
         return ['status'=>200, 'headers'=>['Content-Type'=>'text/html'],
-            'body'=>$path === '/blog/' ? $links : '<p>Public fixture</p>'];
+            'body'=>$path === '/blog/' ? $links : '<title> 日本語 &amp; テスト </title><p>Public fixture</p>'];
     };
     $GLOBALS['nxmt_http_responses'] = array_fill(0, 40, $responder);
     $GLOBALS['nxmt_http_calls'] = [];
@@ -254,6 +255,26 @@ namespace {
         'a registered public GET is still crawled when discovered in HTML while a POST-only operation stays unrequested');
     $complete = \NxMultiTool\Crawler::read($inventory['run']);
     $pages = array_column($complete['rows'], null, 'url');
+    expect($pages['https://runtime.example.test/blog/runtime-extra']['title'] === '日本語 & テスト'
+        && $pages['https://runtime.example.test/blog/runtime-extra']['content_status'] === '',
+        'public HTML titles decode Japanese and entities without inventing a publication status');
+    foreach (['post/draft', 'page/draft-page'] as $draftPath) {
+        $draftUrl = 'https://runtime.example.test/blog/' . $draftPath;
+        expect($pages[$draftUrl]['content_status'] === '下書き' && $pages[$draftUrl]['http'] === 0
+            && !in_array($draftUrl, $fetched, true), 'a public link never queues the saved draft URL: ' . $draftPath);
+    }
+    expect($pages['https://runtime.example.test/blog/post/hello']['title'] === '日本語テスト記事'
+        && $pages['https://runtime.example.test/blog/post/hello']['content_status'] === '公開',
+        'a generic HTTP document title does not overwrite CMS content metadata');
+    expect($pages['https://runtime.example.test/blog/runtime-missing']['title'] === ''
+        && $pages['https://runtime.example.test/blog/runtime-login']['title'] === ''
+        && $pages['https://runtime.example.test/blog/runtime-style.css']['title'] === '',
+        'error pages, sign-in responses and assets leave the title empty');
+    expect(Discovery::title('<html><p>タイトルなし</p></html>') === ''
+        && Discovery::title('<title>test</title>', 'text/html; charset=invalid-encoding') === '',
+        'missing titles and unsupported encodings are blank');
+    expect(Discovery::title(mb_convert_encoding('<meta charset="Shift_JIS"><title>日本語のページ</title>', 'SJIS', 'UTF-8')) === '日本語のページ',
+        'HTML title extraction respects a declared Japanese character encoding');
     expect(in_array('viewer_page', $pages['https://runtime.example.test/blog/runtime-public']['tags'], true)
         && in_array('viewer_page', $pages['https://runtime.example.test/blog/runtime-extra']['tags'], true),
         'registered and newly discovered public HTML pages share the visitor-page filter');

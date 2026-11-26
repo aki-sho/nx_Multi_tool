@@ -30,22 +30,36 @@ final class Crawler
             }
         }
         $run = bin2hex(random_bytes(16));
-        $state = ['run' => $run, 'base' => $base, 'login_path' => SiteInfo::loginPath(), 'created' => time(), 'rows' => [], 'queue' => [], 'visited' => [], 'requests' => 0, 'content_pages' => [], 'done' => false, 'limited' => false];
+        $state = ['run' => $run, 'base' => $base, 'login_path' => SiteInfo::loginPath(), 'created' => time(), 'rows' => [], 'queue' => [], 'visited' => [], 'requests' => 0, 'content_pages' => [], 'unpublished_pages' => [], 'done' => false, 'limited' => false];
         self::add($state, \url($state['login_path']), $base . '/', 'CMS設定（ログイン）');
-        foreach (['post', 'page'] as $type) {
-            for ($offset = 0; $offset < 10000; $offset += 200) {
-                $page = Content::rows(['type' => $type, 'status' => 'published'], 200, $offset);
-                foreach ($page['rows'] as $item) {
-                    $url = HttpClient::resolve(Content::url($type, $item), $base . '/', $base);
-                    if (!$url) { continue; }
-                    $state['content_pages'][$url] = true; self::add($state, $url, $base . '/', $type === 'post' ? 'CMS設定（投稿）' : 'CMS設定（固定ページ）');
-                    foreach (Discovery::html((string)$item['content']) as $link) { self::add($state, $link['url'], $url, '保存本文'); }
-                    if (!empty($item['featured_media_path'])) {
-                        $mediaUrl = \public_url(preg_replace('#^public/#', '', ltrim((string)$item['featured_media_path'], '/')));
-                        self::add($state, $mediaUrl, $url, 'アイキャッチ');
+        foreach (['published', 'draft'] as $contentStatus) {
+            foreach (['post', 'page'] as $type) {
+                for ($offset = 0; $offset < 10000; $offset += 200) {
+                    $page = Content::rows(['type' => $type, 'status' => $contentStatus], 200, $offset);
+                    foreach ($page['rows'] as $item) {
+                        $url = HttpClient::resolve(Content::url($type, $item), $base . '/', $base);
+                        if (!$url || isset($state['content_pages'][$url])) { continue; }
+                        if ($contentStatus === 'draft') { $state['unpublished_pages'][$url] = true; }
+                        $state['content_pages'][$url] = true; self::add($state, $url, $base . '/', $type === 'post' ? 'CMS設定（投稿）' : 'CMS設定（固定ページ）');
+                        if (isset($state['rows'][$url])) {
+                            $state['rows'][$url]['title'] = mb_substr(trim((string)$item['title']), 0, 500, 'UTF-8');
+                            $state['rows'][$url]['content_status'] = $contentStatus === 'published' ? '公開' : '下書き';
+                            $state['rows'][$url]['cms_content'] = true;
+                            if ($contentStatus === 'draft') {
+                                $state['rows'][$url]['method'] = $type === 'post' ? 'CMS設定（投稿）' : 'CMS設定（固定ページ）';
+                                $state['rows'][$url]['source'] = $base . '/';
+                                $state['rows'][$url]['status'] = 'CMS保存情報のみ（HTTP未確認）';
+                            }
+                        }
+                        if ($contentStatus === 'draft') { continue; }
+                        foreach (Discovery::html((string)$item['content']) as $link) { self::add($state, $link['url'], $url, '保存本文'); }
+                        if (!empty($item['featured_media_path'])) {
+                            $mediaUrl = \public_url(preg_replace('#^public/#', '', ltrim((string)$item['featured_media_path'], '/')));
+                            self::add($state, $mediaUrl, $url, 'アイキャッチ');
+                        }
                     }
+                    if ($offset + count($page['rows']) >= $page['total'] || $state['limited']) { break; }
                 }
-                if ($offset + count($page['rows']) >= $page['total'] || $state['limited']) { break; }
             }
         }
         self::add($state, $base . '/', $base . '/', '開始URL');
@@ -57,8 +71,14 @@ final class Crawler
         } catch (\RuntimeException $exception) {
             $state['warnings'][] = $exception->getMessage();
         }
+        $state['queue'] = array_values(array_filter($state['queue'], static fn($url) => !self::unpublished($state, $url)));
         Storage::transaction(self::key($run), static fn($old) => [$state, null]);
         return self::response($state);
+    }
+
+    private static function unpublished(array $state, string $url): bool
+    {
+        return isset($state['unpublished_pages'][explode('?', $url, 2)[0]]);
     }
 
     private static function registeredRoute(array &$state, array $route): void
@@ -75,7 +95,7 @@ final class Crawler
         $state['rows'][$url] = [
             'url' => $url, 'source' => $route['source'],
             'method' => $route['source'] === 'NexaPress本体' ? 'CMS登録ルート' : '拡張機能の登録ルート',
-            'candidate' => false, 'http' => 0, 'original_http' => 0, 'final_url' => '', 'mime' => '',
+            'candidate' => false, 'http' => 0, 'original_http' => 0, 'final_url' => '', 'mime' => '', 'title' => '', 'content_status' => '',
             'issue' => false, 'tags' => [], 'access' => '未確認',
             'kind' => $template ? 'route' : Discovery::kind($url),
             'status' => $template ? 'URLパターン（{ }内の値を指定して使用・HTTP未確認）' : '登録あり（HTTP未確認）',
@@ -105,13 +125,13 @@ final class Crawler
         if (str_contains($url, 'attachment_id=')) { $tags[] = 'attachment'; }
         $protected = HttpClient::protectedUrl($url, $state['base'], $state['login_path'] ?? null);
         $state['rows'][$url] = ['url' => $url, 'source' => $source, 'method' => $method, 'candidate' => $guessed,
-            'http' => 0, 'original_http' => 0, 'final_url' => '', 'mime' => '', 'issue' => false, 'tags' => $tags,
+            'http' => 0, 'original_http' => 0, 'final_url' => '', 'mime' => '', 'title' => '', 'content_status' => '', 'issue' => false, 'tags' => $tags,
             'access' => '未確認', 'kind' => Discovery::kind($url), 'status' => $protected ? '管理・内部領域のため取得対象外' : (str_contains($url, '?') ? 'クエリ付きのため取得対象外' : '未取得')];
         if ($registeredMethods !== null) {
             $state['rows'][$url]['registered_methods'] = $registeredMethods;
             $state['rows'][$url]['registered_viewer_page'] = $registeredViewerPage;
         }
-        if (!str_contains($url, '?') && !$protected) { $state['queue'][] = $url; }
+        if (!str_contains($url, '?') && !$protected && !self::unpublished($state, $url)) { $state['queue'][] = $url; }
     }
     public static function step(string $run): array
     {
@@ -121,7 +141,7 @@ final class Crawler
             $beforeRows = $state['rows'];
             for ($i = 0; $i < 1 && $state['queue'] && $state['requests'] < 1990; $i++) {
                 $url = array_shift($state['queue']);
-                if (isset($state['visited'][$url])) { continue; }
+                if (isset($state['visited'][$url]) || self::unpublished($state, $url)) { continue; }
                 $state['visited'][$url] = true;
                 $path = (string)parse_url($url, PHP_URL_PATH);
                 $head = (bool)preg_match('/\.(?:jpe?g|png|gif|webp|avif|svg|ico|woff2?|ttf|pdf|zip|mp[34]|webm|docx?|xlsx?)$/i', $path);
@@ -130,6 +150,10 @@ final class Crawler
                     $response = HttpClient::fetch($url, $state['base'], $head, 0, false, $requests);
                     $code = $response['status']; $row = &$state['rows'][$url];
                     $row = array_replace($row, ResponseClassifier::classify($response, !empty($row['candidate'])));
+                    if (empty($row['cms_content']) && $row['kind'] === 'page' && $row['access'] === '未ログインで取得可'
+                        && str_contains(strtolower($row['mime']), 'html')) {
+                        $row['title'] = Discovery::title($response['body'], $row['mime']);
+                    }
                     if ($response['redirected'] && str_starts_with($response['headers']['content-type'] ?? '', 'image/')) { $row['tags'][] = 'image_redirect'; }
                     unset($row);
                     $body = $response['body']; $mime = strtolower($response['headers']['content-type'] ?? '');
@@ -168,8 +192,13 @@ final class Crawler
         $rows = array_values(array_filter($state['rows'], static fn($row) => $before === null || !isset($before[$row['url']]) || $before[$row['url']] !== $row));
         // Classify the returned rows so inventories started before an extension update work too.
         foreach ($rows as &$row) {
+            $row += ['title' => '', 'content_status' => ''];
             if (HttpClient::isAdminUrl($row['url'], $state['base'])) { $row['tags'][] = 'admin'; }
             $pageUrl = explode('?', $row['url'], 2)[0];
+            if (!empty($state['rows'][$pageUrl]['cms_content'])) {
+                $row['title'] = $state['rows'][$pageUrl]['title'] ?? '';
+                $row['content_status'] = $state['rows'][$pageUrl]['content_status'] ?? '';
+            }
             $knownPage = isset($state['content_pages'][$pageUrl]) || isset($state['excluded'][$pageUrl])
                 || rtrim($pageUrl, '/') === $state['base'] || !empty($row['registered_viewer_page'])
                 || !empty($state['rows'][rtrim($pageUrl, '/')]['registered_viewer_page']);

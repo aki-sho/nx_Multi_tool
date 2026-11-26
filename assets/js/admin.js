@@ -304,12 +304,13 @@
   if (crawler) {
     let run = '', rows = [], pause = true, pending = false, generation = 0, finished = false, sort = 'url', direction = 1;
     const status = crawler.querySelector('[data-crawl-status]'), tbody = root.querySelector('[data-crawl-table] tbody');
+    const columns = ['url','title','content_status','source','method','kind','original_http','http','final_url','status','access'];
     const selected = () => {
       const q = crawler.querySelector('[data-crawl-search]').value.toLocaleLowerCase();
       const kinds = Array.from(crawler.querySelectorAll('[data-crawl-kind]:checked')).map(box => box.dataset.crawlKind);
       const only = crawler.querySelector('[data-crawl-mode]').value === 'only';
       const type=crawler.querySelector('[data-crawl-type]').value, issues=crawler.querySelector('[data-crawl-issues]').checked;
-      return rows.filter(row => (!q || (row.url + row.source).toLocaleLowerCase().includes(q)) && (!type||row.kind===type) && (!issues||row.issue)
+      return rows.filter(row => (!q || [row.url,row.title,row.content_status,row.source].join(' ').toLocaleLowerCase().includes(q)) && (!type||row.kind===type) && (!issues||row.issue)
         && (only ? kinds.some(kind=>(row.tags||[row.kind]).includes(kind)) : !kinds.some(kind=>(row.tags||[row.kind]).includes(kind))))
         .sort((a,b) => direction * (['http','original_http'].includes(sort) ? a[sort]-b[sort] : String(a[sort]||'').localeCompare(String(b[sort]||''), 'ja', { numeric:true })));
     };
@@ -317,7 +318,7 @@
       const visible = selected(); tbody.replaceChildren();
       visible.slice(0, 500).forEach(row => {
         const labels={page:'ページ',route:'URLパターン',css:'CSS',js:'JavaScript',image:'画像',font:'フォント',sitemap:'XML・サイトマップ',file:'ファイル'};
-        const tr = document.createElement('tr'); ['url','source','method','kind','original_http','http','final_url','status','access'].forEach(key => { const td = document.createElement('td'); td.textContent = key==='kind' ? labels[row.kind]||row.kind : key==='final_url'&&row[key]===row.url?'—':row[key] || (['http','original_http'].includes(key) ? '—' : ''); tr.append(td); }); tbody.append(tr);
+        const tr = document.createElement('tr'); columns.forEach(key => { const td = document.createElement('td'); td.textContent = key==='kind' ? labels[row.kind]||row.kind : key==='final_url'&&row[key]===row.url?'—':row[key] || (['http','original_http'].includes(key) ? '—' : ''); tr.append(td); }); tbody.append(tr);
       });
       root.querySelector('[data-crawl-count]').textContent = `${visible.length}件（画面は先頭500件。CSVは絞り込み後の全件）`;
     };
@@ -361,7 +362,7 @@
     root.querySelectorAll('[data-crawl-sort]').forEach(button => button.addEventListener('click', () => { direction = sort === button.dataset.crawlSort ? -direction : 1; sort = button.dataset.crawlSort; render(); }));
     crawler.querySelector('[data-crawl-csv]').addEventListener('click', () => {
       const safe = value => { value = String(value ?? ''); if (/^[\s\x00-\x1f]*[=+@-]/.test(value)) value = "'" + value; return '"' + value.replaceAll('"','""') + '"'; };
-      const data = [['URL','発見元','発見方法','種類','HTTP（元）','HTTP（最終取得）','転送先','確認結果','アクセス条件'], ...selected().map(row=>['url','source','method','kind','original_http','http','final_url','status','access'].map(key=>row[key]))];
+      const data = [['URL','ページタイトル','ステータス','発見元','発見方法','種類','HTTP（元）','HTTP（最終取得）','転送先','確認結果','アクセス条件'], ...selected().map(row=>columns.map(key=>row[key]))];
       const url = URL.createObjectURL(new Blob(['\ufeff' + data.map(row=>row.map(safe).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}));
       const link = document.createElement('a'); link.href=url; link.download='nx-multi-tool-site-urls.csv'; link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
     });

@@ -205,7 +205,20 @@ foreach (['post', 'page'] as $contentType) {
     $contentUrl = 'https://current.example.test' . Content::url($contentType, $contentItem);
     check(isset($routeRows[$contentUrl]) && in_array('viewer_page', $routeRows[$contentUrl]['tags'], true),
         'published ' . $contentType . ' is included instead of being unconditionally hidden');
+    check($routeRows[$contentUrl]['title'] === $contentItem['title'] && $routeRows[$contentUrl]['content_status'] === '公開',
+        'published ' . $contentType . ' title and status come from the CMS');
+    $draft = Content::find($contentType, 2);
+    $draftUrl = 'https://current.example.test' . Content::url($contentType, $draft);
+    check($routeRows[$draftUrl]['title'] === $draft['title'] && $routeRows[$draftUrl]['content_status'] === '下書き'
+        && $routeRows[$draftUrl]['http'] === 0 && in_array('viewer_page', $routeRows[$draftUrl]['tags'], true)
+        && !in_array($draftUrl, Storage::read('crawl-1-' . $crawl['run'])['queue'], true),
+        'draft ' . $contentType . ' is metadata-only and is never queued');
 }
+check(!isset($routeRows['https://current.example.test/draft-only-link'])
+    && !isset($routeRows['https://current.example.test/draft-page-only-link']), 'draft bodies do not supply links for the public crawl');
+check($routeRows['https://current.example.test' . url('admin/settings/general')]['title'] === ''
+    && $routeRows['https://current.example.test' . url('admin/settings/general')]['content_status'] === ''
+    && $routeRows['https://current.example.test/']['content_status'] === '', 'inapplicable or unavailable metadata stays empty');
 check(!in_array('viewer_page', $loginRows[0]['tags'], true)
     && !in_array('viewer_page', $routeRows['https://current.example.test' . url('install/database')]['tags'], true)
     && !in_array('viewer_page', $routeRows['https://current.example.test' . url('admin/settings/general')]['tags'], true)
